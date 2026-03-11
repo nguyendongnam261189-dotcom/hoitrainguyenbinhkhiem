@@ -38,14 +38,23 @@ const getDocs = async (collection: string, query?: (ref: admin.firestore.Collect
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
+const app = express();
+const PORT = 3000;
 
-  app.use(express.json());
+app.use(express.json());
 
-  // API Routes
-  app.get("/api/competitions", async (req, res) => {
+// API Routes
+app.post("/api/admin/login", (req, res) => {
+  const { password } = req.body;
+  const correctPassword = process.env.ADMIN_PASSWORD || 'admin123';
+  if (password === correctPassword) {
+    res.json({ success: true });
+  } else {
+    res.status(401).json({ error: "Mật khẩu không chính xác" });
+  }
+});
+
+app.get("/api/competitions", async (req, res) => {
     try {
       const rows = await getDocs("competitions");
       res.json(rows);
@@ -423,7 +432,7 @@ async function startServer() {
     }
   });
 
-  // Vite middleware for development
+  // Vite/Static middleware
   if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -431,10 +440,11 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.resolve(__dirname, "dist")));
+    const distPath = path.resolve(__dirname, "dist");
+    app.use(express.static(distPath));
     app.get("*", (req, res, next) => {
       if (req.path.startsWith('/api')) return next();
-      res.sendFile(path.resolve(__dirname, "dist", "index.html"));
+      res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
@@ -444,7 +454,4 @@ async function startServer() {
     });
   }
 
-  return app;
-}
-
-export const app = startServer();
+export default app;
