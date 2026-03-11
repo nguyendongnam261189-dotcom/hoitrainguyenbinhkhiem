@@ -19,7 +19,9 @@ import {
   AlertCircle,
   GripVertical,
   Download,
-  Upload
+  Upload,
+  Menu,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
@@ -234,6 +236,8 @@ export default function App() {
   const [conversions, setConversions] = useState<PointConversion[]>([]);
   const [pendingScores, setPendingScores] = useState<Record<string, number>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     fetchCompetitions();
@@ -266,6 +270,9 @@ export default function App() {
     const res = await fetch('/api/competitions');
     const json = await res.json();
     setCompetitions(json);
+    if (json.length === 1 && !selectedCompId) {
+      setSelectedCompId(json[0].id);
+    }
   };
 
   const handleCreateCompetition = async () => {
@@ -445,19 +452,26 @@ export default function App() {
   const handleJudgeLogin = async () => {
     if (!judgeLoginCode || !selectedCompId) return;
     setLoginError('');
-    const res = await fetch('/api/judges/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: judgeLoginCode, competition_id: selectedCompId })
-    });
-    if (res.ok) {
-      const judge = await res.json();
-      setLoggedInJudge(judge);
-      setUserRole('judge');
-      setActiveTab('scoring');
-    } else {
-      const err = await res.json();
-      setLoginError(err.error || "Mã giám khảo không đúng");
+    setIsLoggingIn(true);
+    try {
+      const res = await fetch('/api/judges/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: judgeLoginCode, competition_id: selectedCompId })
+      });
+      if (res.ok) {
+        const judge = await res.json();
+        setLoggedInJudge(judge);
+        setUserRole('judge');
+        setActiveTab('scoring');
+      } else {
+        const err = await res.json();
+        setLoginError(err.error || "Mã giám khảo không đúng");
+      }
+    } catch (error) {
+      setLoginError("Lỗi kết nối máy chủ");
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
@@ -1308,25 +1322,25 @@ export default function App() {
                   {loginError}
                 </motion.p>
               )}
-              <div className="flex gap-3">
-                <Button 
-                  variant="secondary" 
-                  className="flex-1 py-4" 
-                  onClick={() => {
-                    setShowAdminLogin(false);
-                    setAdminLoginPassword('');
-                  }}
-                >
-                  Quay lại
-                </Button>
-                <Button 
-                  className="flex-1 py-4" 
-                  onClick={handleAdminLogin}
-                  disabled={!adminLoginPassword}
-                >
-                  Đăng nhập
-                </Button>
-              </div>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Button 
+              variant="secondary" 
+              className="flex-1 py-4 h-14" 
+              onClick={() => {
+                setShowAdminLogin(false);
+                setAdminLoginPassword('');
+              }}
+            >
+              Quay lại
+            </Button>
+            <Button 
+              className="flex-1 py-4 h-14" 
+              onClick={handleAdminLogin}
+              disabled={!adminLoginPassword}
+            >
+              Đăng nhập
+            </Button>
+          </div>
             </div>
           </motion.div>
         </div>
@@ -1351,10 +1365,10 @@ export default function App() {
           <div className="grid gap-4">
             <button 
               onClick={() => setShowAdminLogin(true)}
-              className="group bg-white p-6 rounded-3xl border border-black/5 shadow-sm hover:shadow-md hover:border-black/10 transition-all flex items-center gap-6 text-left"
+              className="group bg-white p-5 sm:p-6 rounded-3xl border border-black/5 shadow-sm hover:shadow-md hover:border-black/10 transition-all flex items-center gap-4 sm:gap-6 text-left"
             >
-              <div className="w-14 h-14 rounded-2xl bg-black text-white flex items-center justify-center group-hover:scale-110 transition-transform">
-                <Settings size={28} />
+              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-black text-white flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                <Settings size={24} className="sm:size-[28px]" />
               </div>
               <div>
                 <h3 className="font-bold text-lg">Quản trị viên</h3>
@@ -1364,10 +1378,10 @@ export default function App() {
 
             <button 
               onClick={() => setUserRole('judge')}
-              className="group bg-white p-6 rounded-3xl border border-black/5 shadow-sm hover:shadow-md hover:border-black/10 transition-all flex items-center gap-6 text-left"
+              className="group bg-white p-5 sm:p-6 rounded-3xl border border-black/5 shadow-sm hover:shadow-md hover:border-black/10 transition-all flex items-center gap-4 sm:gap-6 text-left"
             >
-              <div className="w-14 h-14 rounded-2xl bg-emerald-600 text-white flex items-center justify-center group-hover:scale-110 transition-transform">
-                <Trophy size={28} />
+              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-emerald-600 text-white flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                <Trophy size={24} className="sm:size-[28px]" />
               </div>
               <div>
                 <h3 className="font-bold text-lg">Giám khảo</h3>
@@ -1377,10 +1391,10 @@ export default function App() {
 
             <button 
               onClick={() => setUserRole('btc')}
-              className="group bg-white p-6 rounded-3xl border border-black/5 shadow-sm hover:shadow-md hover:border-black/10 transition-all flex items-center gap-6 text-left"
+              className="group bg-white p-5 sm:p-6 rounded-3xl border border-black/5 shadow-sm hover:shadow-md hover:border-black/10 transition-all flex items-center gap-4 sm:gap-6 text-left"
             >
-              <div className="w-14 h-14 rounded-2xl bg-blue-600 text-white flex items-center justify-center group-hover:scale-110 transition-transform">
-                <LayoutDashboard size={28} />
+              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-blue-600 text-white flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                <LayoutDashboard size={24} className="sm:size-[28px]" />
               </div>
               <div>
                 <h3 className="font-bold text-lg">Ban tổ chức</h3>
@@ -1396,7 +1410,7 @@ export default function App() {
   if (userRole === 'judge' && !loggedInJudge) {
     return (
       <div className="min-h-screen bg-[#F5F5F4] flex items-center justify-center p-6">
-        <Card className="max-w-md w-full p-8 space-y-6">
+        <Card className="max-w-md w-full p-6 sm:p-8 space-y-6">
           <div className="text-center">
             <h2 className="text-2xl font-bold">Đăng nhập Giám khảo</h2>
             <p className="text-sm text-black/40">Chọn hội thi và nhập mã của bạn</p>
@@ -1441,8 +1455,12 @@ export default function App() {
               </motion.p>
             )}
 
-            <Button className="w-full py-4" onClick={handleJudgeLogin} disabled={!selectedCompId || !judgeLoginCode}>
-              Đăng nhập
+            <Button 
+              className="w-full py-4 h-14 text-lg" 
+              onClick={handleJudgeLogin} 
+              disabled={!selectedCompId || !judgeLoginCode || isLoggingIn}
+            >
+              {isLoggingIn ? 'Đang đăng nhập...' : 'Đăng nhập'}
             </Button>
             
             <Button variant="ghost" className="w-full" onClick={() => setUserRole(null)}>
@@ -1466,10 +1484,10 @@ export default function App() {
           {userRole === 'admin' && (
             <Card className="p-6">
               <h2 className="text-xl font-bold mb-4">Tạo Hội thi mới</h2>
-              <div className="flex gap-4 items-end">
-                <Input label="Tên hội thi" value={newCompName} onChange={setNewCompName} placeholder="VD: Ngày hội STEM 2024" className="flex-1" />
-                <Input label="Ngày tổ chức" type="date" value={newCompDate} onChange={setNewCompDate} />
-                <Button onClick={handleCreateCompetition}><Plus size={18} /> Tạo</Button>
+              <div className="flex flex-col sm:flex-row gap-4 items-end">
+                <Input label="Tên hội thi" value={newCompName} onChange={setNewCompName} placeholder="VD: Ngày hội STEM 2024" className="flex-1 w-full" />
+                <Input label="Ngày tổ chức" type="date" value={newCompDate} onChange={setNewCompDate} className="w-full sm:w-auto" />
+                <Button onClick={handleCreateCompetition} className="w-full sm:w-auto"><Plus size={18} /> Tạo</Button>
               </div>
             </Card>
           )}
@@ -1500,10 +1518,31 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-indigo-50/20 flex font-sans text-indigo-950">
+    <div className="min-h-screen bg-indigo-50/20 flex flex-col lg:flex-row font-sans text-indigo-950">
+      {/* Mobile Header */}
+      <header className="lg:hidden bg-white border-b border-indigo-100 p-4 sticky top-0 z-50 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200">
+            <Trophy className="text-white" size={20} />
+          </div>
+          <div className="overflow-hidden">
+            <h2 className="font-bold truncate text-indigo-950 max-w-[200px]">{data?.competition.name}</h2>
+          </div>
+        </div>
+        <button 
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          className="p-2 hover:bg-black/5 rounded-lg"
+        >
+          {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+        </button>
+      </header>
+
       {/* Sidebar */}
-      <aside className="w-72 bg-white border-r border-indigo-100 flex flex-col sticky top-0 h-screen shadow-sm">
-        <div className="p-6">
+      <aside className={cn(
+        "fixed inset-y-0 left-0 z-[60] w-72 bg-white border-r border-indigo-100 flex flex-col shadow-xl transition-transform duration-300 lg:relative lg:translate-x-0 lg:shadow-sm lg:z-0",
+        isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+      )}>
+        <div className="p-6 flex-1">
           <div className="flex items-center gap-3 mb-8">
             <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200">
               <Trophy className="text-white" size={20} />
@@ -1517,31 +1556,39 @@ export default function App() {
           </div>
 
           <nav className="space-y-1.5">
-            <NavItem active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<LayoutDashboard size={20} />} label="Tổng quan" />
+            <NavItem active={activeTab === 'dashboard'} onClick={() => { setActiveTab('dashboard'); setIsMobileMenuOpen(false); }} icon={<LayoutDashboard size={20} />} label="Tổng quan" />
             {userRole === 'admin' && (
               <>
-                <NavItem active={activeTab === 'events'} onClick={() => setActiveTab('events')} icon={<Trophy size={20} />} label="Nội dung thi" />
-                <NavItem active={activeTab === 'classes'} onClick={() => setActiveTab('classes')} icon={<Users size={20} />} label="Danh sách lớp" />
-                <NavItem active={activeTab === 'judges'} onClick={() => setActiveTab('judges')} icon={<UserCircle2 size={20} />} label="Giám khảo" />
-                <NavItem active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} icon={<Settings size={20} />} label="Cấu hình" />
+                <NavItem active={activeTab === 'events'} onClick={() => { setActiveTab('events'); setIsMobileMenuOpen(false); }} icon={<Trophy size={20} />} label="Nội dung thi" />
+                <NavItem active={activeTab === 'classes'} onClick={() => { setActiveTab('classes'); setIsMobileMenuOpen(false); }} icon={<Users size={20} />} label="Danh sách lớp" />
+                <NavItem active={activeTab === 'judges'} onClick={() => { setActiveTab('judges'); setIsMobileMenuOpen(false); }} icon={<UserCircle2 size={20} />} label="Giám khảo" />
+                <NavItem active={activeTab === 'settings'} onClick={() => { setActiveTab('settings'); setIsMobileMenuOpen(false); }} icon={<Settings size={20} />} label="Cấu hình" />
               </>
             )}
             {(userRole === 'admin' || userRole === 'judge') && (
-              <NavItem active={activeTab === 'scoring'} onClick={() => setActiveTab('scoring')} icon={<CheckCircle2 size={20} />} label="Chấm điểm" />
+              <NavItem active={activeTab === 'scoring'} onClick={() => { setActiveTab('scoring'); setIsMobileMenuOpen(false); }} icon={<CheckCircle2 size={20} />} label="Chấm điểm" />
             )}
-            <NavItem active={activeTab === 'summary'} onClick={() => setActiveTab('summary')} icon={<BarChart3 size={20} />} label="Bảng tổng hợp" />
-            <NavItem active={activeTab === 'rankings'} onClick={() => setActiveTab('rankings')} icon={<Trophy size={20} />} label="Bảng xếp hạng" />
+            <NavItem active={activeTab === 'summary'} onClick={() => { setActiveTab('summary'); setIsMobileMenuOpen(false); }} icon={<BarChart3 size={20} />} label="Bảng tổng hợp" />
+            <NavItem active={activeTab === 'rankings'} onClick={() => { setActiveTab('rankings'); setIsMobileMenuOpen(false); }} icon={<Trophy size={20} />} label="Bảng xếp hạng" />
           </nav>
         </div>
 
         <div className="mt-auto p-6 space-y-2 border-t border-indigo-50">
-          <Button variant="outline" className="w-full border-indigo-100 text-indigo-600 hover:bg-indigo-50" onClick={() => setSelectedCompId(null)}>Đổi hội thi</Button>
-          <Button variant="ghost" className="w-full text-rose-500 hover:bg-rose-50" onClick={() => setUserRole(null)}>Đăng xuất</Button>
+          <Button variant="outline" className="w-full border-indigo-100 text-indigo-600 hover:bg-indigo-50" onClick={() => { setSelectedCompId(null); setIsMobileMenuOpen(false); }}>Đổi hội thi</Button>
+          <Button variant="ghost" className="w-full text-rose-500 hover:bg-rose-50" onClick={() => { setUserRole(null); setIsMobileMenuOpen(false); }}>Đăng xuất</Button>
         </div>
       </aside>
 
+      {/* Mobile Overlay */}
+      {isMobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-black/20 backdrop-blur-sm z-[55] lg:hidden"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
       {/* Main Content */}
-      <main className="flex-1 p-8 overflow-auto">
+      <main className="flex-1 p-4 lg:p-8 overflow-auto">
         <AnimatePresence mode="wait">
           {activeTab === 'dashboard' && (
             <motion.div key="dashboard" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8">
@@ -1553,14 +1600,14 @@ export default function App() {
                 <Button variant="secondary" onClick={exportToExcel}><FileSpreadsheet size={18} /> Xuất Excel</Button>
               </div>
 
-              <div className="grid grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
                 <StatCard label="Tổng số lớp" value={data?.classes.length || 0} icon={<Users className="text-blue-600" />} />
                 <StatCard label="Nội dung thi" value={data?.events.length || 0} icon={<Trophy className="text-amber-600" />} />
                 <StatCard label="Giám khảo" value={data?.judges.length || 0} icon={<UserCircle2 className="text-emerald-600" />} />
                 <StatCard label="Tiến độ chấm" value={`${Math.round((data?.scores.length || 0) / ((data?.classes.length || 1) * (data?.events.length || 1) * (data?.judges.length || 1)) * 100)}%`} icon={<CheckCircle2 className="text-purple-600" />} />
               </div>
 
-              <div className="grid grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6">
                 <Card className="col-span-2 p-6">
                   <h3 className="font-bold text-lg mb-6">Top 10 Lớp dẫn đầu</h3>
                   <div className="h-80">
@@ -1666,7 +1713,7 @@ export default function App() {
               {showAddEvent && (
                 <Card className="p-6">
                   <h2 className="text-xl font-bold mb-4">{editingEvent ? 'Sửa nội dung thi' : 'Thêm nội dung thi mới'}</h2>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="flex flex-col sm:flex-row gap-4">
                     <Input label="Tên nội dung" value={newEventName} onChange={setNewEventName} placeholder="VD: Dân vũ, Văn nghệ..." />
                     <Input label="Hệ số" type="number" value={newEventWeight} onChange={setNewEventWeight} />
                     <Input label="Số lần chấm" type="number" value={newEventRounds} onChange={(val) => {
@@ -1681,7 +1728,7 @@ export default function App() {
                   {newEventRounds > 1 && (
                     <div className="mt-4 space-y-3">
                       <label className="text-xs font-semibold uppercase tracking-wider text-black/50 ml-1">Tên các lần chấm (Ví dụ: Vệ sinh trại, VSATTP...)</label>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="flex flex-col sm:flex-row gap-3">
                         {Array.from({ length: newEventRounds }).map((_, i) => (
                           <div key={i} className="flex items-center gap-2">
                             <span className="text-xs font-bold text-black/30 w-12">Lần {i + 1}:</span>
@@ -1822,7 +1869,7 @@ export default function App() {
                 <Card className="p-6">
                   <h2 className="text-xl font-bold mb-4">{editingClass ? 'Sửa lớp' : 'Thêm lớp mới'}</h2>
                   <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col sm:flex-row gap-4 items-end">
                       <Input label="Khối" value={newClassGrade} onChange={setNewClassGrade} placeholder="VD: 6" />
                       {!editingClass && (
                         <Input 
@@ -1945,7 +1992,7 @@ export default function App() {
               {showAddJudge && (
                 <Card className="p-6">
                   <h2 className="text-xl font-bold mb-4">{editingJudge ? 'Sửa giám khảo' : 'Thêm giám khảo mới'}</h2>
-                  <div className="grid grid-cols-2 gap-4 items-end">
+                <div className="flex flex-col sm:flex-row gap-4 items-end">
                     <Input label="Tên giám khảo" value={newJudgeName} onChange={setNewJudgeName} placeholder="VD: Nguyễn Văn A" />
                     <Input label="Mã đăng nhập" value={newJudgeCode} onChange={setNewJudgeCode} placeholder="VD: GK01" />
                     <Button className="col-span-2" onClick={handleAddJudge}><Save size={18} /> {editingJudge ? 'Cập nhật' : 'Thêm'}</Button>
@@ -2035,7 +2082,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="flex gap-4">
+              <div className="flex flex-col sm:flex-row gap-4">
                 <div className="flex-1 space-y-2">
                   <label className="text-xs font-bold uppercase text-black/40 ml-1">Chọn nội dung thi</label>
                   <select 
@@ -2064,7 +2111,7 @@ export default function App() {
 
               {selectedEventId && (selectedJudgeId || userRole === 'judge') && (
                 <Card className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
+                  <table className="w-full text-left border-collapse min-w-max">
                     <thead>
                       <tr className="bg-black/5">
                         <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider">Lớp</th>
@@ -2192,7 +2239,7 @@ export default function App() {
               </div>
 
               <Card className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
+                <table className="w-full text-left border-collapse min-w-max">
                   <thead>
                     <tr className="bg-black/5">
                       <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider sticky left-0 bg-black/5 z-10">STT</th>
@@ -2358,7 +2405,7 @@ export default function App() {
                         </h3>
                       </div>
                       <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse">
+                        <table className="w-full text-left border-collapse min-w-max">
                           <thead>
                             <tr className="bg-black/5">
                               <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider w-20">Hạng</th>
