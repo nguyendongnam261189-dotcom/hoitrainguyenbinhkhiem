@@ -1,0 +1,5 @@
+{
+  "name": "Hệ thống Chấm điểm Hội thi Học sinh",
+  "description": "Ứng dụng quản lý, chấm điểm và tổng hợp kết quả các hội thi học sinh (Ngày hội văn hóa, Hội trại, STEM) với tính năng xuất Excel và xếp hạng tự động.",
+  "requestFramePermissions": []
+}
