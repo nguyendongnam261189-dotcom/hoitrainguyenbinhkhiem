@@ -1244,16 +1244,25 @@ export default function App() {
 
   // --- Views ---
 
-  const handleAdminLogin = () => {
-    // In a real app, this should be verified server-side
-    // For this applet, we'll use a simple check
+  const handleAdminLogin = async () => {
     setLoginError('');
-    if (adminLoginPassword === 'admin123') {
-      setUserRole('admin');
-      setAdminLoginPassword('');
-      setShowAdminLogin(false);
-    } else {
-      setLoginError('Mật khẩu không chính xác');
+    try {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: adminLoginPassword })
+      });
+      
+      if (res.ok) {
+        setUserRole('admin');
+        setAdminLoginPassword('');
+        setShowAdminLogin(false);
+      } else {
+        const err = await res.json();
+        setLoginError(err.error || 'Mật khẩu không chính xác');
+      }
+    } catch (error) {
+      setLoginError('Lỗi kết nối máy chủ');
     }
   };
 
@@ -1398,7 +1407,7 @@ export default function App() {
               <label className="text-xs font-bold uppercase text-black/40 ml-1">Chọn hội thi</label>
               <select 
                 value={selectedCompId || ''} 
-                onChange={(e) => setSelectedCompId(Number(e.target.value))}
+                onChange={(e) => setSelectedCompId(e.target.value)}
                 className="w-full px-4 py-3 bg-black/5 border-none rounded-xl focus:ring-2 focus:ring-black/10 outline-none font-medium"
               >
                 <option value="">-- Chọn hội thi --</option>
