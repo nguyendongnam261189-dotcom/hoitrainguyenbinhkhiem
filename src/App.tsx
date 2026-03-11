@@ -450,26 +450,37 @@ export default function App() {
   };
 
   const handleJudgeLogin = async () => {
-    if (!judgeLoginCode || !selectedCompId) return;
+    const trimmedCode = judgeLoginCode.trim();
+    if (!trimmedCode || !selectedCompId) {
+      setLoginError("Vui lòng chọn hội thi và nhập mã giám khảo");
+      return;
+    }
     setLoginError('');
     setIsLoggingIn(true);
     try {
       const res = await fetch('/api/judges/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: judgeLoginCode, competition_id: selectedCompId })
+        body: JSON.stringify({ code: trimmedCode, competition_id: selectedCompId })
       });
+      
+      let data;
+      try {
+        data = await res.json();
+      } catch (e) {
+        throw new Error("Phản hồi từ máy chủ không hợp lệ");
+      }
+
       if (res.ok) {
-        const judge = await res.json();
-        setLoggedInJudge(judge);
+        setLoggedInJudge(data);
         setUserRole('judge');
         setActiveTab('scoring');
       } else {
-        const err = await res.json();
-        setLoginError(err.error || "Mã giám khảo không đúng");
+        setLoginError(data.error || "Mã giám khảo không đúng");
       }
-    } catch (error) {
-      setLoginError("Lỗi kết nối máy chủ");
+    } catch (error: any) {
+      console.error("Login error:", error);
+      setLoginError(`Lỗi kết nối: ${error.message || "Không xác định"}. Vui lòng kiểm tra mạng.`);
     } finally {
       setIsLoggingIn(false);
     }
