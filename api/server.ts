@@ -1,13 +1,13 @@
 import express from "express";
 import admin from "firebase-admin";
 
-// 1. Khởi tạo Firebase Admin (Tối ưu cho Serverless - FIX LỖI TRÙNG LẶP)
+// 1. Khởi tạo Firebase Admin (Tối ưu cho Serverless)
 const projectId = process.env.FIREBASE_PROJECT_ID;
 const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'); // FIX LỖI ĐỊNH DẠNG KEY
+const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
 
 if (projectId && clientEmail && privateKey) {
-  if (!admin.apps.length) { // KIỂM TRA TRƯỚC KHI KHỞI TẠO
+  if (!admin.apps.length) {
     try {
       admin.initializeApp({
         credential: admin.credential.cert({ projectId, clientEmail, privateKey }),
@@ -21,7 +21,7 @@ if (projectId && clientEmail && privateKey) {
 
 const db = admin.firestore();
 
-// Helper lấy dữ liệu (Giữ nguyên của bạn)
+// Helper lấy dữ liệu
 const getDocs = async (collection: string, queryFn?: (ref: admin.firestore.CollectionReference) => admin.firestore.Query) => {
   let ref: admin.firestore.Query = db.collection(collection);
   if (queryFn) ref = queryFn(db.collection(collection));
@@ -32,7 +32,7 @@ const getDocs = async (collection: string, queryFn?: (ref: admin.firestore.Colle
 const app = express();
 app.use(express.json());
 
-// --- CÁC ROUTE QUẢN TRỊ (GIỮ 100% LOGIC CỦA BẠN) ---
+// --- API ROUTES ---
 
 app.post("/api/admin/login", (req, res) => {
   const { password } = req.body;
@@ -40,6 +40,7 @@ app.post("/api/admin/login", (req, res) => {
   res.json({ success: password === correctPassword });
 });
 
+// Competitions
 app.get("/api/competitions", async (req, res) => {
   try { res.json(await getDocs("competitions")); } catch (e) { res.status(500).send(e); }
 });
@@ -101,7 +102,93 @@ app.get("/api/competitions/:id/full", async (req, res) => {
   } catch (e) { res.status(500).send(e); }
 });
 
-// Route Đăng nhập giám khảo (Logic mới của bạn)
+// Reorder
+app.post("/api/reorder", async (req, res) => {
+  try {
+    const { collection, items } = req.body;
+    const batch = db.batch();
+    items.forEach((item: any) => batch.update(db.collection(collection).doc(item.id), { order: item.order }));
+    await batch.commit();
+    res.json({ success: true });
+  } catch (e) { res.status(500).send(e); }
+});
+
+// Classes
+app.post("/api/classes", async (req, res) => {
+  try {
+    const { name, grade, competition_id, order } = req.body;
+    const docRef = await db.collection("classes").add({ 
+      name, grade, competition_id, order: order || 0, bonus_points: 0, penalty_points: 0 
+    });
+    res.json({ id: docRef.id });
+  } catch (e) { res.status(500).send(e); }
+});
+
+app.put("/api/classes/:id", async (req, res) => {
+  try {
+    await db.collection("classes").doc(req.params.id).update(req.body);
+    res.json({ success: true });
+  } catch (e) { res.status(500).send(e); }
+});
+
+app.delete("/api/classes/:id", async (req, res) => {
+  try {
+    await db.collection("classes").doc(req.params.id).delete();
+    res.json({ success: true });
+  } catch (e) { res.status(500).send(e); }
+});
+
+// --- EVENTS (ĐÃ THÊM judge_count) ---
+app.post("/api/events", async (req, res) => {
+  try {
+    const { name, competition_id, type, round_count, weight, order, round_names, ranking_scope, judge_count } = req.body;
+    const docRef = await db.collection("events").add({ 
+      name, competition_id, type, round_count, weight, is_locked: false, 
+      order: order || 0, round_names: round_names || [], 
+      ranking_scope: ranking_scope || 'grade',
+      judge_count: judge_count || 1 // LƯU SỐ GIÁM KHẢO
+    });
+    res.json({ id: docRef.id });
+  } catch (e) { res.status(500).send(e); }
+});
+
+app.put("/api/events/:id", async (req, res) => {
+  try {
+    // Cập nhật toàn bộ body (bao gồm cả judge_count nếu có)
+    await db.collection("events").doc(req.params.id).update(req.body);
+    res.json({ success: true });
+  } catch (e) { res.status(500).send(e); }
+});
+
+app.delete("/api/events/:id", async (req, res) => {
+  try {
+    await db.collection("events").doc(req.params.id).delete();
+    res.json({ success: true });
+  } catch (e) { res.status(500).send(e); }
+});
+
+// Judges
+app.post("/api/judges", async (req, res) => {
+  try {
+    const docRef = await db.collection("judges").add({ ...req.body, order: req.body.order || 0 });
+    res.json({ id: docRef.id });
+  } catch (e) { res.status(500).send(e); }
+});
+
+app.put("/api/judges/:id", async (req, res) => {
+  try {
+    await db.collection("judges").doc(req.params.id).update(req.body);
+    res.json({ success: true });
+  } catch (e) { res.status(500).send(e); }
+});
+
+app.delete("/api/judges/:id", async (req, res) => {
+  try {
+    await db.collection("judges").doc(req.params.id).delete();
+    res.json({ success: true });
+  } catch (e) { res.status(500).send(e); }
+});
+
 app.post("/api/judges/login", async (req, res) => {
   try {
     const { code, competition_id } = req.body;
@@ -111,7 +198,7 @@ app.post("/api/judges/login", async (req, res) => {
   } catch (e) { res.status(500).send(e); }
 });
 
-// Route lưu điểm Bulk (Kiểm tra khóa kép của bạn)
+// Scores
 app.post("/api/scores/bulk", async (req, res) => {
   try {
     const { scores } = req.body;
@@ -136,8 +223,20 @@ app.post("/api/scores/bulk", async (req, res) => {
   } catch (e) { res.status(500).send(e); }
 });
 
-// Các route CRUD khác (Events, Classes, Judges, Conversions...) 
-// bạn chỉ cần copy logic y hệt vào đây.
+// Conversions
+app.get("/api/conversions", async (req, res) => {
+  try { res.json(await getDocs("conversions", ref => ref.orderBy("rank"))); } catch (e) { res.status(500).send(e); }
+});
 
-// XUẤT APP CHO VERCEL (Bỏ app.listen)
+app.post("/api/conversions", async (req, res) => {
+  try {
+    const snap = await db.collection("conversions").get();
+    const batch = db.batch();
+    snap.docs.forEach(doc => batch.delete(doc.ref));
+    req.body.conversions.forEach((c: any) => batch.set(db.collection("conversions").doc(), { rank: c.rank, points: c.points }));
+    await batch.commit();
+    res.json({ success: true });
+  } catch (e) { res.status(500).send(e); }
+});
+
 export default app;
