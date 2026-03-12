@@ -24,6 +24,7 @@ export interface Event {
   weight: number;
   is_locked: boolean;
   ranking_scope?: 'grade' | 'school';
+  judge_count?: number;
 }
 
 export interface Judge {
@@ -31,8 +32,6 @@ export interface Judge {
   name: string;
   code?: string;
   competition_id: string;
-  assigned_event_ids?: string[];
-  is_bonus_penalty_judge?: boolean;
 }
 
 export interface Score {
