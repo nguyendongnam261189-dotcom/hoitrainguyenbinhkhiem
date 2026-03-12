@@ -31,6 +31,8 @@ export interface Judge {
   name: string;
   code?: string;
   competition_id: string;
+  assigned_event_ids?: string[];
+  is_bonus_penalty_judge?: boolean;
 }
 
 export interface Score {
