@@ -218,12 +218,15 @@ export default function App() {
   const [newEventWeight, setNewEventWeight] = useState(1);
   const [newEventRounds, setNewEventRounds] = useState(1);
   const [newEventRoundNames, setNewEventRoundNames] = useState<string[]>([]);
+  const [newEventRankingScope, setNewEventRankingScope] = useState<'grade' | 'school'>('grade');
 
   const [showAddClass, setShowAddClass] = useState(false);
   const [editingClass, setEditingClass] = useState<Class | null>(null);
   const [newClassName, setNewClassName] = useState('');
   const [newClassGrade, setNewClassGrade] = useState('');
   const [newClassCount, setNewClassCount] = useState(1);
+  const [newClassBonusPoints, setNewClassBonusPoints] = useState(0);
+  const [newClassPenaltyPoints, setNewClassPenaltyPoints] = useState(0);
 
   const [showAddJudge, setShowAddJudge] = useState(false);
   const [editingJudge, setEditingJudge] = useState<Judge | null>(null);
@@ -271,7 +274,10 @@ export default function App() {
     const json = await res.json();
     setCompetitions(json);
     if (json.length === 1 && !selectedCompId) {
-      setSelectedCompId(json[0].id);
+      const comp = json[0];
+      if (userRole === 'admin' || !comp.is_locked) {
+        setSelectedCompId(comp.id);
+      }
     }
   };
 
@@ -302,6 +308,37 @@ export default function App() {
     }
   };
 
+  const handleToggleLockCompetition = async (compId: string, currentLocked: boolean) => {
+    try {
+      const res = await fetch(`/api/competitions/${compId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_locked: !currentLocked })
+      });
+      if (res.ok) {
+        await fetchCompetitions();
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleDeleteCompetition = async (compId: string) => {
+    if (!window.confirm("Bạn có chắc chắn muốn xóa hội thi này? Tất cả dữ liệu liên quan sẽ bị mất vĩnh viễn.")) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/competitions/${compId}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        await fetchCompetitions();
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
   const handleAddEvent = async () => {
     if (!newEventName) return;
     
@@ -311,7 +348,8 @@ export default function App() {
       type: newEventType, 
       round_count: newEventRounds, 
       weight: newEventWeight,
-      round_names: newEventRoundNames.slice(0, newEventRounds)
+      round_names: newEventRoundNames.slice(0, newEventRounds),
+      ranking_scope: newEventRankingScope
     };
 
     if (editingEvent) {
@@ -322,6 +360,7 @@ export default function App() {
       });
       if (res.ok) {
         setNewEventName('');
+        setNewEventRankingScope('grade');
         setEditingEvent(null);
         setShowAddEvent(false);
         fetchFullData(selectedCompId!);
@@ -335,6 +374,7 @@ export default function App() {
       });
       if (res.ok) {
         setNewEventName('');
+        setNewEventRankingScope('grade');
         setShowAddEvent(false);
         fetchFullData(selectedCompId!);
       }
@@ -358,11 +398,18 @@ export default function App() {
       const res = await fetch(`/api/classes/${editingClass.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newClassName.trim(), grade: newClassGrade })
+        body: JSON.stringify({ 
+          name: newClassName.trim(), 
+          grade: newClassGrade,
+          bonus_points: newClassBonusPoints,
+          penalty_points: newClassPenaltyPoints
+        })
       });
       if (res.ok) {
         setNewClassName('');
         setNewClassGrade('');
+        setNewClassBonusPoints(0);
+        setNewClassPenaltyPoints(0);
         setEditingClass(null);
         setShowAddClass(false);
         fetchFullData(selectedCompId!);
@@ -455,6 +502,13 @@ export default function App() {
       setLoginError("Vui lòng chọn hội thi và nhập mã giám khảo");
       return;
     }
+
+    const comp = competitions.find(c => c.id === selectedCompId);
+    if (comp?.is_locked) {
+      setLoginError("Hội thi này đã bị khóa. Vui lòng liên hệ ban tổ chức.");
+      return;
+    }
+
     setLoginError('');
     setIsLoggingIn(true);
     try {
@@ -877,7 +931,13 @@ export default function App() {
       
       const classResults = data.classes.map(cls => {
         const clsScores = eventScores.filter(s => s.class_id === cls.id);
-        const totalScore = clsScores.reduce((sum, s) => sum + s.score, 0);
+        
+        // Calculate total score: sum(regular) + sum(bonus) - sum(penalty)
+        const regularScore = clsScores.filter(s => !s.category || s.category === 'none').reduce((sum, s) => sum + s.score, 0);
+        const bonusScore = clsScores.filter(s => s.category === 'bonus').reduce((sum, s) => sum + s.score, 0);
+        const penaltyScore = clsScores.filter(s => s.category === 'penalty').reduce((sum, s) => sum + s.score, 0);
+        
+        const totalScore = regularScore + bonusScore - penaltyScore;
         const hasScores = clsScores.length > 0;
         
         // Group scores by judge for display
@@ -899,19 +959,24 @@ export default function App() {
 
       const hasAnyScores = eventScores.length > 0;
 
-      // Rank within each grade
+      // Rank within scope
       const rankedResults = classResults.map(res => {
-        if (!hasAnyScores) {
+        // If no scores entered for this class (not participated), rank is 0 and points are 0
+        if (!res.hasScores) {
           return { ...res, rank: 0, convertedPoints: 0 };
         }
 
-        const sameGrade = classResults.filter(r => r.grade === res.grade);
-        const sorted = [...sameGrade].sort((a, b) => b.totalScore - a.totalScore);
+        const scope = event.ranking_scope || 'grade';
+        const comparisonGroup = scope === 'school' 
+          ? classResults.filter(r => r.hasScores) 
+          : classResults.filter(r => r.grade === res.grade && r.hasScores);
+          
+        const sorted = [...comparisonGroup].sort((a, b) => b.totalScore - a.totalScore);
         
         // Handle ties: find first index of this score
         const rank = sorted.findIndex(r => r.totalScore === res.totalScore) + 1;
         
-        // Converted points
+        // Converted points: if rank is higher than configured, use the last configured points
         const conv = data.conversions.find(c => c.rank === rank);
         const convertedPoints = (conv ? conv.points : (data.conversions.length > 0 ? data.conversions[data.conversions.length - 1].points : 0)) * event.weight;
 
@@ -944,6 +1009,10 @@ export default function App() {
         totalRawScore += raw;
       });
 
+      // Add bonus and penalty points
+      totalPoints += (cls.bonus_points || 0);
+      totalPoints -= (cls.penalty_points || 0);
+
       return {
         classId: cls.id,
         className: cls.name,
@@ -951,7 +1020,9 @@ export default function App() {
         eventPoints,
         eventRawScores,
         totalPoints,
-        totalRawScore
+        totalRawScore,
+        bonus_points: cls.bonus_points || 0,
+        penalty_points: cls.penalty_points || 0
       };
     });
 
@@ -1114,7 +1185,7 @@ export default function App() {
     titleRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
     wsSummary.addRow([]);
 
-    const headerCols = ['STT', 'LỚP', ...data.events.map(e => e.name), 'TỔNG ĐIỂM', 'XẾP HẠNG'];
+    const headerCols = ['STT', 'LỚP', ...data.events.map(e => e.name), 'ĐIỂM THƯỞNG', 'ĐIỂM TRỪ', 'TỔNG ĐIỂM', 'XẾP HẠNG'];
     const headerRow = wsSummary.addRow(headerCols);
     headerRow.eachCell(cell => {
       applyDefaultStyles(cell);
@@ -1127,6 +1198,8 @@ export default function App() {
         idx + 1,
         s.className,
         ...data.events.map(e => s.eventPoints[e.id]),
+        s.bonus_points,
+        s.penalty_points,
         s.totalPoints,
         s.overallRank
       ];
@@ -1505,22 +1578,73 @@ export default function App() {
 
           <div className="grid sm:grid-cols-2 gap-4">
             {competitions.map(comp => (
-              <button 
+              <Card 
                 key={comp.id}
-                onClick={() => setSelectedCompId(comp.id)}
-                className="bg-white p-6 rounded-2xl border border-black/5 shadow-sm hover:shadow-md text-left transition-all group"
+                className={cn(
+                  "p-6 hover:shadow-md transition-all group relative",
+                  comp.is_locked && userRole !== 'admin' && "opacity-60 grayscale cursor-not-allowed"
+                )}
               >
                 <div className="flex justify-between items-start mb-4">
-                  <div className="w-12 h-12 rounded-xl bg-black/5 flex items-center justify-center group-hover:bg-black group-hover:text-white transition-colors">
-                    <Trophy size={24} />
+                  <div className={cn(
+                    "w-12 h-12 rounded-xl flex items-center justify-center transition-colors",
+                    comp.is_locked ? "bg-rose-50 text-rose-500" : "bg-black/5 group-hover:bg-black group-hover:text-white"
+                  )}>
+                    {comp.is_locked ? <Lock size={24} /> : <Trophy size={24} />}
                   </div>
-                  <span className="text-xs font-bold text-black/30 bg-black/5 px-2 py-1 rounded-lg">{comp.date}</span>
+                  <div className="flex flex-col items-end gap-2">
+                    <span className="text-xs font-bold text-black/30 bg-black/5 px-2 py-1 rounded-lg">{comp.date}</span>
+                    {comp.is_locked && (
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-rose-500 bg-rose-50 px-2 py-0.5 rounded-md flex items-center gap-1">
+                        <Lock size={10} /> Đã khóa
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <h3 className="font-bold text-xl">{comp.name}</h3>
-                <div className="mt-4 flex items-center text-black/40 text-sm font-medium">
-                  Tiếp tục <ChevronRight size={16} className="ml-1" />
+                
+                <h3 className="font-bold text-xl mb-4">{comp.name}</h3>
+                
+                <div className="flex items-center justify-between mt-auto">
+                  <button 
+                    onClick={() => {
+                      if (comp.is_locked && userRole !== 'admin') {
+                        alert("Hội thi này đã bị khóa bởi quản trị viên.");
+                        return;
+                      }
+                      setSelectedCompId(comp.id);
+                    }}
+                    className={cn(
+                      "flex items-center text-sm font-bold transition-colors",
+                      comp.is_locked && userRole !== 'admin' ? "text-black/20" : "text-indigo-600 hover:text-indigo-700"
+                    )}
+                  >
+                    {comp.is_locked && userRole !== 'admin' ? 'Không thể truy cập' : 'Tiếp tục'} 
+                    <ChevronRight size={16} className="ml-1" />
+                  </button>
+
+                  {userRole === 'admin' && (
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => handleToggleLockCompetition(comp.id, !!comp.is_locked)}
+                        className={cn(
+                          "p-2 rounded-lg transition-colors",
+                          comp.is_locked ? "text-rose-500 hover:bg-rose-50" : "text-black/40 hover:bg-black/5"
+                        )}
+                        title={comp.is_locked ? "Mở khóa hội thi" : "Khóa hội thi"}
+                      >
+                        {comp.is_locked ? <Lock size={18} /> : <Unlock size={18} />}
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteCompetition(comp.id)}
+                        className="p-2 text-black/40 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+                        title="Xóa hội thi"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+                  )}
                 </div>
-              </button>
+              </Card>
             ))}
           </div>
         </div>
@@ -1734,6 +1858,17 @@ export default function App() {
                       while (names.length < rounds) names.push('');
                       setNewEventRoundNames(names);
                     }} />
+                    <div className="flex flex-col gap-1.5 flex-1">
+                      <label className="text-xs font-semibold uppercase tracking-wider text-black/50 ml-1">Phạm vi xếp giải</label>
+                      <select 
+                        value={newEventRankingScope} 
+                        onChange={(e) => setNewEventRankingScope(e.target.value as 'grade' | 'school')}
+                        className="px-4 py-2.5 bg-black/5 border-none rounded-xl focus:ring-2 focus:ring-black/10 outline-none transition-all text-sm font-medium"
+                      >
+                        <option value="grade">Theo Khối</option>
+                        <option value="school">Toàn trường</option>
+                      </select>
+                    </div>
                   </div>
                   
                   {newEventRounds > 1 && (
@@ -1817,6 +1952,7 @@ export default function App() {
                                       setNewEventWeight(event.weight);
                                       setNewEventRounds(event.round_count);
                                       setNewEventRoundNames(event.round_names || []);
+                                      setNewEventRankingScope(event.ranking_scope || 'grade');
                                       setShowAddEvent(true);
                                       window.scrollTo({ top: 0, behavior: 'smooth' });
                                     }}
@@ -1903,7 +2039,13 @@ export default function App() {
                       )}
                     </div>
                     {editingClass ? (
-                      <Input label="Tên lớp" value={newClassName} onChange={setNewClassName} placeholder="VD: 6/1" />
+                      <div className="space-y-4">
+                        <Input label="Tên lớp" value={newClassName} onChange={setNewClassName} placeholder="VD: 6/1" />
+                        <div className="flex flex-col sm:flex-row gap-4">
+                          <Input label="Điểm thưởng" type="number" value={newClassBonusPoints} onChange={setNewClassBonusPoints} />
+                          <Input label="Điểm trừ" type="number" value={newClassPenaltyPoints} onChange={setNewClassPenaltyPoints} />
+                        </div>
+                      </div>
                     ) : (
                       <Textarea 
                         label="Tên các lớp (mỗi lớp một dòng)" 
@@ -1950,6 +2092,8 @@ export default function App() {
                                             setEditingClass(cls);
                                             setNewClassName(cls.name);
                                             setNewClassGrade(cls.grade);
+                                            setNewClassBonusPoints(cls.bonus_points || 0);
+                                            setNewClassPenaltyPoints(cls.penalty_points || 0);
                                             setNewClassCount(1);
                                             setShowAddClass(true);
                                             window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2135,6 +2279,8 @@ export default function App() {
                             </th>
                           );
                         })}
+                        <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider text-center text-emerald-600">Thưởng</th>
+                        <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider text-center text-rose-600">Trừ</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2165,6 +2311,22 @@ export default function App() {
                                     />
                                   </td>
                                 ))}
+                                <td className="px-6 py-4 text-center">
+                                  <ScoreInput 
+                                    value={pendingScores[`${cls.id}-1-bonus`] || 0}
+                                    onChange={(val) => handleSaveScore(cls.id, selectedEventId, judgeId, 1, val, 'bonus')}
+                                    disabled={event.is_locked}
+                                    className="text-emerald-600"
+                                  />
+                                </td>
+                                <td className="px-6 py-4 text-center">
+                                  <ScoreInput 
+                                    value={pendingScores[`${cls.id}-1-penalty`] || 0}
+                                    onChange={(val) => handleSaveScore(cls.id, selectedEventId, judgeId, 1, val, 'penalty')}
+                                    disabled={event.is_locked}
+                                    className="text-rose-600"
+                                  />
+                                </td>
                               </tr>
                             );
                           })}
@@ -2194,7 +2356,7 @@ export default function App() {
               </div>
 
               <Card className="p-6">
-                <div className="flex justify-between items-center mb-6">
+                <div className="flex justify-between items-center mb-2">
                   <h2 className="text-xl font-bold">Điểm quy đổi thứ hạng</h2>
                   <Button variant="outline" size="sm" onClick={() => {
                     const nextRank = conversions.length + 1;
@@ -2203,11 +2365,12 @@ export default function App() {
                     <Plus size={16} /> Thêm hạng
                   </Button>
                 </div>
+                <p className="text-xs text-black/40 mb-6 italic">* Hạng cuối cùng trong danh sách sẽ được áp dụng cho tất cả các thứ hạng thấp hơn sau đó.</p>
                 <div className="space-y-4">
                   {conversions.map((c, idx) => (
                     <div key={c.rank} className="flex items-center gap-4">
                       <div className="w-12 h-12 rounded-xl bg-black/5 flex items-center justify-center font-bold">
-                        #{c.rank}
+                        {idx === conversions.length - 1 && idx > 0 ? `#${c.rank}+` : `#${c.rank}`}
                       </div>
                       <div className="flex-1">
                         <Input 
@@ -2261,6 +2424,8 @@ export default function App() {
                           <div className="text-[9px] font-normal normal-case opacity-40">Quy đổi / Thô</div>
                         </th>
                       ))}
+                      <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider text-center min-w-[100px] text-emerald-600">Thưởng</th>
+                      <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider text-center min-w-[100px] text-rose-600">Trừ</th>
                       <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider text-center bg-black/10 min-w-[120px]">Tổng điểm</th>
                       <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider text-center bg-black/10">Xếp hạng</th>
                     </tr>
@@ -2289,6 +2454,8 @@ export default function App() {
                                 <div className="text-[10px] text-black/30">Thô: {s.eventRawScores[e.id] || 0}</div>
                               </td>
                             ))}
+                            <td className="px-6 py-4 text-center font-bold text-emerald-600">+{s.bonus_points}</td>
+                            <td className="px-6 py-4 text-center font-bold text-rose-600">-{s.penalty_points}</td>
                             <td className="px-6 py-4 text-center bg-black/[0.02]">
                               <div className="font-bold text-lg">{s.totalPoints}</div>
                               <div className="text-[10px] text-black/30">Tổng thô: {s.totalRawScore}</div>
@@ -2371,88 +2538,158 @@ export default function App() {
               </div>
 
               <div className="space-y-8">
-                {(rankingGrade === 'all' ? Array.from(new Set(data.classes.map(c => c.grade))).sort() : [rankingGrade]).map(grade => {
-                  let results: any[] = [];
-                  let title = "";
+                {(() => {
+                  const event = rankingEventId === 'overall' ? null : data.events.find(e => e.id === rankingEventId);
+                  const scope = event?.ranking_scope || 'grade';
 
-                  if (rankingEventId === 'overall') {
-                    results = overallSummary
-                      .filter(s => s.grade === grade)
-                      .map(s => ({
-                        id: s.classId,
-                        name: s.className,
-                        score: s.totalPoints,
-                        rawScore: s.totalRawScore,
-                        rank: s.overallRank
-                      }));
-                    title = "Bảng điểm tổng hợp";
-                  } else {
+                  if (scope === 'school' && rankingEventId !== 'overall') {
                     const eventRes = eventResults.find(er => er.event.id === rankingEventId);
-                    results = (eventRes?.results || [])
-                      .filter(r => r.grade === grade)
+                    let results = (eventRes?.results || [])
+                      .filter(r => rankingGrade === 'all' || r.grade === rankingGrade)
                       .map(r => ({
                         id: r.classId,
                         name: r.className,
+                        grade: r.grade,
                         score: r.convertedPoints,
                         rawScore: r.totalScore,
                         rank: r.rank
                       }));
-                    title = `Nội dung: ${eventRes?.event.name}`;
-                  }
 
-                  results.sort((a, b) => a.rank - b.rank);
-                  if (rankingLimit !== 'all') {
-                    results = results.slice(0, rankingLimit);
-                  }
+                    results.sort((a, b) => a.rank - b.rank);
+                    if (rankingLimit !== 'all') results = results.slice(0, rankingLimit);
 
-                  if (results.length === 0) return null;
-
-                  return (
-                    <Card key={grade} className="p-6">
-                      <div className="flex justify-between items-center mb-6">
-                        <h3 className="text-xl font-bold flex items-center gap-2">
-                          <span className="w-8 h-8 rounded-lg bg-black text-white flex items-center justify-center text-sm">Khối {grade}</span>
-                          {title}
-                        </h3>
-                      </div>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse min-w-max">
-                          <thead>
-                            <tr className="bg-black/5">
-                              <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider w-20">Hạng</th>
-                              <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider">Lớp</th>
-                              <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider text-center">Điểm thô</th>
-                              <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider text-center">Điểm quy đổi</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-black/5">
-                            {results.map((r) => (
-                              <tr key={r.id} className="hover:bg-black/[0.02] transition-colors">
-                                <td className="px-6 py-4">
-                                  <div className={cn(
-                                    "w-8 h-8 rounded-lg flex items-center justify-center font-bold",
-                                    r.rank === 1 ? "bg-amber-100 text-amber-700" : 
-                                    r.rank === 2 ? "bg-slate-100 text-slate-700" : 
-                                    r.rank === 3 ? "bg-orange-100 text-orange-700" : "bg-black/5 text-black/40"
-                                  )}>
-                                    {r.rank || '-'}
-                                  </div>
-                                </td>
-                                <td className="px-6 py-4 font-bold">{r.name}</td>
-                                <td className="px-6 py-4 text-center font-medium">{r.rawScore}</td>
-                                <td className="px-6 py-4 text-center">
-                                  <span className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-bold">
-                                    {rankingEventId === 'overall' ? r.score : `+${r.score}`}
-                                  </span>
-                                </td>
+                    return (
+                      <Card className="p-6">
+                        <div className="flex justify-between items-center mb-6">
+                          <h3 className="text-xl font-bold flex items-center gap-2">
+                            <span className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-[10px] uppercase">Trường</span>
+                            Nội dung: {event?.name} (Xếp giải toàn trường)
+                          </h3>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left border-collapse min-w-max">
+                            <thead>
+                              <tr className="bg-black/5">
+                                <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider w-20">Hạng</th>
+                                <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider">Lớp</th>
+                                <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider">Khối</th>
+                                <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider text-center">Điểm thô</th>
+                                <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider text-center">Điểm quy đổi</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </Card>
-                  );
-                })}
+                            </thead>
+                            <tbody className="divide-y divide-black/5">
+                              {results.map((r) => (
+                                <tr key={r.id} className="hover:bg-black/[0.02] transition-colors">
+                                  <td className="px-6 py-4">
+                                    <div className={cn(
+                                      "w-8 h-8 rounded-lg flex items-center justify-center font-bold",
+                                      r.rank === 1 ? "bg-amber-100 text-amber-700" : 
+                                      r.rank === 2 ? "bg-slate-100 text-slate-700" : 
+                                      r.rank === 3 ? "bg-orange-100 text-orange-700" : "bg-black/5 text-black/40"
+                                    )}>
+                                      {r.rank || '-'}
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-4 font-bold">{r.name}</td>
+                                  <td className="px-6 py-4">
+                                    <span className={cn("px-2 py-0.5 rounded text-[10px] font-bold uppercase", getGradeColor(r.grade))}>Khối {r.grade}</span>
+                                  </td>
+                                  <td className="px-6 py-4 text-center font-medium">{r.rawScore}</td>
+                                  <td className="px-6 py-4 text-center">
+                                    <span className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-bold">+{r.score}</span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </Card>
+                    );
+                  }
+
+                  return (rankingGrade === 'all' ? Array.from(new Set(data.classes.map(c => c.grade))).sort() : [rankingGrade]).map(grade => {
+                    let results: any[] = [];
+                    let title = "";
+
+                    if (rankingEventId === 'overall') {
+                      results = overallSummary
+                        .filter(s => s.grade === grade)
+                        .map(s => ({
+                          id: s.classId,
+                          name: s.className,
+                          score: s.totalPoints,
+                          rawScore: s.totalRawScore,
+                          rank: s.overallRank
+                        }));
+                      title = "Bảng điểm tổng hợp";
+                    } else {
+                      const eventRes = eventResults.find(er => er.event.id === rankingEventId);
+                      results = (eventRes?.results || [])
+                        .filter(r => r.grade === grade)
+                        .map(r => ({
+                          id: r.classId,
+                          name: r.className,
+                          score: r.convertedPoints,
+                          rawScore: r.totalScore,
+                          rank: r.rank
+                        }));
+                      title = `Nội dung: ${eventRes?.event.name}`;
+                    }
+
+                    results.sort((a, b) => a.rank - b.rank);
+                    if (rankingLimit !== 'all') {
+                      results = results.slice(0, rankingLimit);
+                    }
+
+                    if (results.length === 0) return null;
+
+                    return (
+                      <Card key={grade} className="p-6">
+                        <div className="flex justify-between items-center mb-6">
+                          <h3 className="text-xl font-bold flex items-center gap-2">
+                            <span className="w-8 h-8 rounded-lg bg-black text-white flex items-center justify-center text-sm">Khối {grade}</span>
+                            {title}
+                          </h3>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left border-collapse min-w-max">
+                            <thead>
+                              <tr className="bg-black/5">
+                                <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider w-20">Hạng</th>
+                                <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider">Lớp</th>
+                                <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider text-center">Điểm thô</th>
+                                <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider text-center">Điểm quy đổi</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-black/5">
+                              {results.map((r) => (
+                                <tr key={r.id} className="hover:bg-black/[0.02] transition-colors">
+                                  <td className="px-6 py-4">
+                                    <div className={cn(
+                                      "w-8 h-8 rounded-lg flex items-center justify-center font-bold",
+                                      r.rank === 1 ? "bg-amber-100 text-amber-700" : 
+                                      r.rank === 2 ? "bg-slate-100 text-slate-700" : 
+                                      r.rank === 3 ? "bg-orange-100 text-orange-700" : "bg-black/5 text-black/40"
+                                    )}>
+                                      {r.rank || '-'}
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-4 font-bold">{r.name}</td>
+                                  <td className="px-6 py-4 text-center font-medium">{r.rawScore}</td>
+                                  <td className="px-6 py-4 text-center">
+                                    <span className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-bold">
+                                      {rankingEventId === 'overall' ? r.score : `+${r.score}`}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </Card>
+                    );
+                  });
+                })()}
               </div>
             </motion.div>
           )}
@@ -2493,7 +2730,7 @@ function StatCard({ label, value, icon }: { label: string; value: string | numbe
   );
 }
 
-function ScoreInput({ value, onChange, disabled }: { value: number; onChange: (val: number) => void; disabled?: boolean }) {
+function ScoreInput({ value, onChange, disabled, className }: { value: number; onChange: (val: number) => void; disabled?: boolean; className?: string }) {
   const [localValue, setLocalValue] = useState(isNaN(value) ? "" : value.toString());
 
   useEffect(() => {
@@ -2519,7 +2756,7 @@ function ScoreInput({ value, onChange, disabled }: { value: number; onChange: (v
           (e.target as HTMLInputElement).blur();
         }
       }}
-      className="w-20 px-3 py-2 bg-black/5 border-none rounded-lg text-center font-bold focus:ring-2 focus:ring-black/10 outline-none disabled:opacity-50"
+      className={cn("w-20 px-3 py-2 bg-black/5 border-none rounded-lg text-center font-bold focus:ring-2 focus:ring-black/10 outline-none disabled:opacity-50", className)}
     />
   );
 }
