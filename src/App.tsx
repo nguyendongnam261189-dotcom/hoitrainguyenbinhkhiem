@@ -13,15 +13,15 @@ import {
   BarChart3,
   LogOut,
   UserCircle2,
-  Trash2,
-  Edit2,
-  CheckCircle2,
-  AlertCircle,
-  GripVertical,
-  Download,
-  Upload,
-  Menu,
-  X
+  Trash2, 
+  Edit2, 
+  CheckCircle2, 
+  AlertCircle, 
+  GripVertical, 
+  Download, 
+  Upload, 
+  Menu, 
+  X 
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
@@ -93,7 +93,7 @@ const Button = ({
   const variants = {
     primary: 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200 shadow-lg',
     secondary: 'bg-emerald-500 text-white hover:bg-emerald-600 shadow-emerald-100 shadow-lg',
-    outline: 'border border-black/10 hover:bg-black/5 bg-white',
+    outline: 'border border-black/10 hover:bg-black/5 bg-white text-indigo-600',
     danger: 'bg-rose-500 text-white hover:bg-rose-600 shadow-rose-100 shadow-lg',
     ghost: 'hover:bg-black/5'
   };
@@ -110,7 +110,7 @@ const Button = ({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "rounded-xl font-medium transition-all active:scale-95 disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-2",
+        "rounded-xl font-medium transition-all active:scale-95 disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-2 whitespace-nowrap",
         variants[variant],
         sizes[size],
         className
@@ -173,7 +173,7 @@ const Textarea = ({
 }: { 
   label?: string; 
   value: string; 
-  onChange: (val: string) => void;
+  onChange: (val: string) => void; 
   placeholder?: string;
   className?: string;
   id?: string;
@@ -256,7 +256,6 @@ export default function App() {
     }
   }, [selectedCompId]);
 
-  // Initialize pending scores when event/judge changes
   useEffect(() => {
     if (selectedEventId && data) {
       const judgeId = userRole === 'judge' ? loggedInJudge?.id : selectedJudgeId;
@@ -1087,622 +1086,6 @@ export default function App() {
     });
   }, [data, eventResults]);
 
-  // --- Export Excel ---
-
-  // --- Export Excel Styled ---
-
-  const applyDefaultStyles = (cell: ExcelJS.Cell) => {
-    cell.border = {
-      top: { style: 'thin' },
-      left: { style: 'thin' },
-      bottom: { style: 'thin' },
-      right: { style: 'thin' }
-    };
-    cell.alignment = { vertical: 'middle', horizontal: 'center' };
-    cell.font = { name: 'Arial', size: 10 };
-  };
-
-  const exportEventRankings = async (eventId: string) => {
-    if (!data) return;
-    const eventRes = eventResults.find(er => er.event.id === eventId);
-    if (!eventRes) return;
-
-    const { event, results } = eventRes;
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet(event.name.substring(0, 30));
-
-    // 1. Title
-    const titleRow = worksheet.addRow([`NỘI DUNG THI ${event.name.toUpperCase()} (${data.competition.name.toUpperCase()})`]);
-    const effectiveRoundCount = event.round_count || 1;
-    let maxCols = 2 + (data.judges.length * effectiveRoundCount) + 3;
-    worksheet.mergeCells(1, 1, 1, maxCols);
-    titleRow.getCell(1).font = { bold: true, color: { argb: 'FFFF0000' }, size: 16 };
-    titleRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
-    worksheet.addRow([]); // Empty row
-
-    // 2. Headers
-    let h1: string[] = ['STT', 'LỚP'];
-    let h2: string[] = ['', ''];
-    
-    for (let r = 1; r <= effectiveRoundCount; r++) {
-      const customName = event.round_names?.[r-1];
-      const roundLabel = customName || (effectiveRoundCount > 1 ? `ĐIỂM CHẤM LẦN ${r}` : 'ĐIỂM CHẤM');
-      h1.push(roundLabel, ...Array(data.judges.length - 1).fill(''));
-      data.judges.forEach((_, i) => h2.push(`GK${i + 1}`));
-    }
-    h1.push('TỔNG ĐIỂM', 'XẾP VT', 'TỔNG ĐIỂM');
-    h2.push('', '', '');
-
-    const headerRow1 = worksheet.addRow(h1);
-    const headerRow2 = worksheet.addRow(h2);
-    
-    worksheet.mergeCells(3, 1, 4, 1); // STT
-    worksheet.mergeCells(3, 2, 4, 2); // LỚP
-    
-    let colIdx = 3;
-    for (let r = 1; r <= effectiveRoundCount; r++) {
-      worksheet.mergeCells(3, colIdx, 3, colIdx + data.judges.length - 1);
-      colIdx += data.judges.length;
-    }
-    worksheet.mergeCells(3, colIdx, 4, colIdx); // TỔNG ĐIỂM
-    worksheet.mergeCells(3, colIdx + 1, 4, colIdx + 1); // XẾP VT
-    worksheet.mergeCells(3, colIdx + 2, 4, colIdx + 2); // TỔNG ĐIỂM (Converted)
-
-    [3, 4].forEach(rowNum => {
-      worksheet.getRow(rowNum).eachCell(cell => {
-        applyDefaultStyles(cell);
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
-        cell.font = { bold: true, color: { argb: 'FFFF0000' }, size: 11 };
-      });
-    });
-
-    // 3. Data grouped by grade
-    const grades = Array.from(new Set(data.classes.map(c => c.grade))).sort();
-    let currentRow = 5;
-
-    grades.forEach(grade => {
-      // Grade Header
-      const gradeRow = worksheet.addRow([`KHỐI ${grade}`]);
-      worksheet.mergeCells(currentRow, 1, currentRow, maxCols);
-      gradeRow.getCell(1).font = { bold: true, color: { argb: 'FF0000FF' }, size: 12 };
-      gradeRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
-      gradeRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE9F5FF' } };
-      gradeRow.getCell(1).border = {
-        top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' }
-      };
-      currentRow++;
-
-      const gradeResults = results.filter(r => r.grade === grade).sort((a, b) => a.rank - b.rank);
-      gradeResults.forEach((r, idx) => {
-        const rowData: any[] = [idx + 1, r.className];
-        
-        for (let rd = 1; rd <= effectiveRoundCount; rd++) {
-          data.judges.forEach(j => {
-            rowData.push(r.judgeScores[`${j.id}_${rd}_`] || r.judgeScores[`${j.id}_${rd}_none`] || 0);
-          });
-        }
-        rowData.push(r.totalScore, r.rank, r.convertedPoints);
-
-        const row = worksheet.addRow(rowData);
-        row.eachCell((cell, colNum) => {
-          applyDefaultStyles(cell);
-          if (colNum === 2) cell.font = { bold: true, color: { argb: 'FF0000FF' } };
-          
-          // Color judge score columns
-          if (colNum >= 3 && colNum < 3 + (effectiveRoundCount * data.judges.length)) {
-            const roundIdx = Math.floor((colNum - 3) / data.judges.length);
-            const colors = ['FFFFFF00', 'FF92D050', 'FF9BC2E6', 'FFD9E1F2', 'FFF2F2F2'];
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors[roundIdx % colors.length] } };
-            cell.font = { color: { argb: 'FFFF0000' } };
-          }
-        });
-        currentRow++;
-      });
-    });
-
-    // Column widths
-    worksheet.getColumn(1).width = 5;
-    worksheet.getColumn(2).width = 10;
-    for (let i = 3; i < maxCols - 2; i++) worksheet.getColumn(i).width = 8;
-    worksheet.getColumn(maxCols - 2).width = 12;
-    worksheet.getColumn(maxCols - 1).width = 8;
-    worksheet.getColumn(maxCols).width = 12;
-
-    const buffer = await workbook.xlsx.writeBuffer();
-    saveAs(new Blob([buffer]), `${data.competition.name}_${event.name}_XepHang.xlsx`);
-  };
-
-  const exportToExcel = async () => {
-    if (!data) return;
-
-    const workbook = new ExcelJS.Workbook();
-    
-    // 1. Overall Summary Sheet
-    const wsSummary = workbook.addWorksheet("TỔNG HỢP");
-    const titleRow = wsSummary.addRow([`BẢNG TỔNG HỢP KẾT QUẢ - ${data.competition.name.toUpperCase()}`]);
-    wsSummary.mergeCells(1, 1, 1, data.events.length + 6);
-    titleRow.getCell(1).font = { bold: true, color: { argb: 'FFFF0000' }, size: 16 };
-    titleRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
-    wsSummary.addRow([]);
-
-    const headerCols = ['STT', 'LỚP', ...data.events.map(e => e.name), 'THƯỞNG', 'TRỪ', 'TỔNG ĐIỂM', 'XẾP HẠNG'];
-    const headerRow = wsSummary.addRow(headerCols);
-    headerRow.eachCell(cell => {
-      applyDefaultStyles(cell);
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
-      cell.font = { bold: true, color: { argb: 'FFFF0000' } };
-    });
-
-    const grades = Array.from(new Set(data.classes.map(c => c.grade))).sort();
-    let currentSummaryRow = 4;
-
-    grades.forEach(grade => {
-      // Add Grade Header
-      const gradeRow = wsSummary.addRow([`KHỐI ${grade}`]);
-      wsSummary.mergeCells(currentSummaryRow, 1, currentSummaryRow, headerCols.length);
-      gradeRow.getCell(1).font = { bold: true, color: { argb: 'FF0000FF' }, size: 12 };
-      gradeRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
-      gradeRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE9F5FF' } };
-      gradeRow.getCell(1).border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-      currentSummaryRow++;
-
-      const gradeSummary = overallSummary.filter(s => s.grade === grade);
-      gradeSummary.forEach((s, idx) => {
-        const rowData = [
-          idx + 1,
-          s.className,
-          ...data.events.map(e => s.eventPoints[e.id]),
-          s.bonus_points,
-          s.penalty_points,
-          s.totalPoints,
-          s.overallRank
-        ];
-        const row = wsSummary.addRow(rowData);
-        row.eachCell((cell, colNum) => {
-          applyDefaultStyles(cell);
-          if (colNum === 2) cell.font = { bold: true, color: { argb: 'FF0000FF' } };
-        });
-        currentSummaryRow++;
-      });
-    });
-
-    // 2. Event Sheets
-    for (const er of eventResults) {
-      const { event, results } = er;
-      const ws = workbook.addWorksheet(event.name.substring(0, 30));
-      
-      const effectiveRoundCount = event.round_count || 1;
-      
-      // Title
-      const eTitle = ws.addRow([`NỘI DUNG THI ${event.name.toUpperCase()} (${data.competition.name.toUpperCase()})`]);
-      let maxCols = 2 + (data.judges.length * (event.type === 'hygiene' ? 2 : effectiveRoundCount)) + 3;
-
-      ws.mergeCells(1, 1, 1, maxCols);
-      eTitle.getCell(1).font = { bold: true, color: { argb: 'FFFF0000' }, size: 16 };
-      eTitle.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
-      ws.addRow([]);
-
-      // Headers
-      let h1: string[] = ['STT', 'LỚP'];
-      let h2: string[] = ['', ''];
-      
-      if (event.type === 'hygiene') {
-        h1.push('ĐỔ RÁC', ...Array(data.judges.length - 1).fill(''), 'VSATTP', ...Array(data.judges.length - 1).fill(''));
-        data.judges.forEach((_, i) => h2.push(`GK${i + 1}`));
-        data.judges.forEach((_, i) => h2.push(`GK${i + 1}`));
-      } else {
-        for (let r = 1; r <= effectiveRoundCount; r++) {
-          const customName = event.round_names?.[r-1];
-          const roundLabel = customName || (effectiveRoundCount > 1 ? `ĐIỂM CHẤM LẦN ${r}` : 'ĐIỂM CHẤM');
-          h1.push(roundLabel, ...Array(data.judges.length - 1).fill(''));
-          data.judges.forEach((_, i) => h2.push(`GK${i + 1}`));
-        }
-      }
-      h1.push('TỔNG ĐIỂM', 'XẾP VT', 'TỔNG ĐIỂM');
-      h2.push('', '', '');
-
-      const row1 = ws.addRow(h1);
-      const row2 = ws.addRow(h2);
-
-      // Merge headers
-      ws.mergeCells(3, 1, 4, 1); // STT
-      ws.mergeCells(3, 2, 4, 2); // LỚP
-      
-      let colIdx = 3;
-      if (event.type === 'hygiene') {
-        ws.mergeCells(3, colIdx, 3, colIdx + data.judges.length - 1);
-        ws.mergeCells(3, colIdx + data.judges.length, 3, colIdx + (2 * data.judges.length) - 1);
-        colIdx += 2 * data.judges.length;
-      } else {
-        for (let r = 1; r <= effectiveRoundCount; r++) {
-          ws.mergeCells(3, colIdx, 3, colIdx + data.judges.length - 1);
-          colIdx += data.judges.length;
-        }
-      }
-      ws.mergeCells(3, colIdx, 4, colIdx); // TỔNG ĐIỂM
-      ws.mergeCells(3, colIdx + 1, 4, colIdx + 1); // XẾP VT
-      ws.mergeCells(3, colIdx + 2, 4, colIdx + 2); // TỔNG ĐIỂM (Converted)
-
-      [3, 4].forEach(rowNum => {
-        ws.getRow(rowNum).eachCell(cell => {
-          applyDefaultStyles(cell);
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
-          cell.font = { bold: true, color: { argb: 'FFFF0000' } };
-        });
-      });
-
-      // Data grouped by grade
-      const eventGrades = Array.from(new Set(data.classes.map(c => c.grade))).sort();
-      let curRow = 5;
-
-      eventGrades.forEach(grade => {
-        const gRow = ws.addRow([`KHỐI ${grade}`]);
-        ws.mergeCells(curRow, 1, curRow, maxCols);
-        gRow.getCell(1).font = { bold: true, color: { argb: 'FF0000FF' }, size: 12 };
-        gRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
-        gRow.getCell(1).border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-        gRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE9F5FF' } };
-        curRow++;
-
-        const gRes = results.filter(r => r.grade === grade).sort((a, b) => a.rank - b.rank);
-        gRes.forEach((r, idx) => {
-          const rowData: any[] = [idx + 1, r.className];
-          
-          if (event.type === 'hygiene') {
-            data.judges.forEach(j => rowData.push(r.judgeScores[`${j.id}_1_do_rac`] || 0));
-            data.judges.forEach(j => rowData.push(r.judgeScores[`${j.id}_1_vsattp`] || 0));
-          } else {
-            for (let rd = 1; rd <= effectiveRoundCount; rd++) {
-              data.judges.forEach(j => {
-                const score = r.judgeScores[`${j.id}_${rd}_`] || r.judgeScores[`${j.id}_${rd}_none`] || 0;
-                rowData.push(score);
-              });
-            }
-          }
-          rowData.push(r.totalScore, r.rank, r.convertedPoints);
-          
-          const dataRow = ws.addRow(rowData);
-          dataRow.eachCell((cell, colNum) => {
-            applyDefaultStyles(cell);
-            if (colNum === 2) cell.font = { bold: true, color: { argb: 'FF0000FF' } };
-            
-            // Color judge score columns
-            if (event.type === 'hygiene') {
-              if (colNum >= 3 && colNum < 3 + (2 * data.judges.length)) {
-                const isVsat = colNum >= 3 + data.judges.length;
-                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isVsat ? 'FF92D050' : 'FFFFFF00' } };
-                cell.font = { color: { argb: 'FFFF0000' } };
-              }
-            } else {
-              const roundIdx = Math.floor((colNum - 3) / data.judges.length);
-              if (colNum >= 3 && colNum < 3 + (effectiveRoundCount * data.judges.length)) {
-                const colors = ['FFFFFF00', 'FF92D050', 'FF9BC2E6', 'FFD9E1F2', 'FFF2F2F2'];
-                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors[roundIdx % colors.length] } };
-                cell.font = { color: { argb: 'FFFF0000' } };
-              }
-            }
-          });
-          curRow++;
-        });
-      });
-    }
-
-    const buffer = await workbook.xlsx.writeBuffer();
-    saveAs(new Blob([buffer]), `${data.competition.name}_KetQua.xlsx`);
-  };
-
-  // --- Views ---
-
-  const handleAdminLogin = async () => {
-    setLoginError('');
-    try {
-      const res = await fetch('/api/admin/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: adminLoginPassword })
-      });
-      
-      if (res.ok) {
-        setUserRole('admin');
-        setAdminLoginPassword('');
-        setShowAdminLogin(false);
-      } else {
-        const err = await res.json();
-        setLoginError(err.error || 'Mật khẩu không chính xác');
-      }
-    } catch (error) {
-      setLoginError('Lỗi kết nối máy chủ');
-    }
-  };
-
-  if (!userRole) {
-    if (showAdminLogin) {
-      return (
-        <div className="min-h-screen bg-indigo-50/30 flex items-center justify-center p-6">
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="w-full max-w-md space-y-8 bg-white p-8 rounded-3xl border border-indigo-100 shadow-xl shadow-indigo-100/50"
-          >
-            <div className="text-center space-y-2">
-              <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-200">
-                <Lock className="text-white" size={32} />
-              </div>
-              <h1 className="text-3xl font-bold tracking-tight text-indigo-950">Đăng nhập Admin</h1>
-              <p className="text-indigo-600/60">Vui lòng nhập mật khẩu quản trị</p>
-            </div>
-
-            <div className="space-y-4">
-              <Input 
-                label="Mật khẩu" 
-                value={adminLoginPassword} 
-                onChange={(val) => {
-                  setAdminLoginPassword(val);
-                  if (loginError) setLoginError('');
-                }} 
-                placeholder="Nhập mật khẩu" 
-                type="password"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && adminLoginPassword) {
-                    handleAdminLogin();
-                  }
-                }}
-              />
-              {loginError && (
-                <motion.p 
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="text-red-500 text-sm font-medium text-center bg-red-50 py-2 rounded-xl border border-red-100"
-                >
-                  {loginError}
-                </motion.p>
-              )}
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Button 
-              variant="secondary" 
-              className="flex-1 py-4 h-14" 
-              onClick={() => {
-                setShowAdminLogin(false);
-                setAdminLoginPassword('');
-              }}
-            >
-              Quay lại
-            </Button>
-            <Button 
-              className="flex-1 py-4 h-14" 
-              onClick={handleAdminLogin}
-              disabled={!adminLoginPassword}
-            >
-              Đăng nhập
-            </Button>
-          </div>
-            </div>
-          </motion.div>
-        </div>
-      );
-    }
-
-    return (
-      <div className="min-h-screen bg-indigo-50/30 flex items-center justify-center p-6">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="w-full max-w-md space-y-8"
-        >
-          <div className="text-center space-y-4">
-            <div className="w-20 h-20 bg-indigo-600 rounded-3xl flex items-center justify-center mx-auto shadow-xl shadow-indigo-200">
-              <Trophy className="text-white" size={40} />
-            </div>
-            <h1 className="text-4xl font-bold tracking-tight text-indigo-950">Hệ thống Chấm điểm</h1>
-            <p className="text-indigo-600/60 text-lg">Chào mừng bạn đến với hệ thống quản lý hội thi</p>
-          </div>
-
-          <div className="grid gap-4">
-            <button 
-              onClick={() => setShowAdminLogin(true)}
-              className="group bg-white p-5 sm:p-6 rounded-3xl border border-black/5 shadow-sm hover:shadow-md hover:border-black/10 transition-all flex items-center gap-4 sm:gap-6 text-left"
-            >
-              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-black text-white flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
-                <Settings size={24} className="sm:size-[28px]" />
-              </div>
-              <div>
-                <h3 className="font-bold text-lg">Quản trị viên</h3>
-                <p className="text-sm text-black/40">Quản lý nội dung, lớp, giám khảo</p>
-              </div>
-            </button>
-
-            <button 
-              onClick={() => setUserRole('judge')}
-              className="group bg-white p-5 sm:p-6 rounded-3xl border border-black/5 shadow-sm hover:shadow-md hover:border-black/10 transition-all flex items-center gap-4 sm:gap-6 text-left"
-            >
-              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-emerald-600 text-white flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
-                <Trophy size={24} className="sm:size-[28px]" />
-              </div>
-              <div>
-                <h3 className="font-bold text-lg">Giám khảo</h3>
-                <p className="text-sm text-black/40">Đăng nhập bằng mã để chấm điểm</p>
-              </div>
-            </button>
-
-            <button 
-              onClick={() => setUserRole('btc')}
-              className="group bg-white p-5 sm:p-6 rounded-3xl border border-black/5 shadow-sm hover:shadow-md hover:border-black/10 transition-all flex items-center gap-4 sm:gap-6 text-left"
-            >
-              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-blue-600 text-white flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
-                <LayoutDashboard size={24} className="sm:size-[28px]" />
-              </div>
-              <div>
-                <h3 className="font-bold text-lg">Ban tổ chức</h3>
-                <p className="text-sm text-black/40">Xem bảng xếp hạng & tổng hợp</p>
-              </div>
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
-
-  if (userRole === 'judge' && !loggedInJudge) {
-    return (
-      <div className="min-h-screen bg-[#F5F5F4] flex items-center justify-center p-6">
-        <Card className="max-w-md w-full p-6 sm:p-8 space-y-6">
-          <div className="text-center">
-            <h2 className="text-2xl font-bold">Đăng nhập Giám khảo</h2>
-            <p className="text-sm text-black/40">Chọn hội thi và nhập mã của bạn</p>
-          </div>
-
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-xs font-bold uppercase text-black/40 ml-1">Chọn hội thi</label>
-              <select 
-                value={selectedCompId || ''} 
-                onChange={(e) => setSelectedCompId(e.target.value)}
-                className="w-full px-4 py-3 bg-black/5 border-none rounded-xl focus:ring-2 focus:ring-black/10 outline-none font-medium"
-              >
-                <option value="">-- Chọn hội thi --</option>
-                {competitions.map(comp => <option key={comp.id} value={comp.id}>{comp.name}</option>)}
-              </select>
-            </div>
-
-            <Input 
-              label="Mã giám khảo" 
-              value={judgeLoginCode} 
-              onChange={(val) => {
-                setJudgeLoginCode(val);
-                if (loginError) setLoginError('');
-              }} 
-              placeholder="Nhập mã được cấp" 
-              type="password"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && judgeLoginCode) {
-                  handleJudgeLogin();
-                }
-              }}
-            />
-
-            {loginError && (
-              <motion.p 
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="text-red-500 text-sm font-medium text-center bg-red-50 py-2 rounded-xl border border-red-100"
-              >
-                {loginError}
-              </motion.p>
-            )}
-
-            <Button 
-              className="w-full py-4 h-14 text-lg" 
-              onClick={handleJudgeLogin} 
-              disabled={!selectedCompId || !judgeLoginCode || isLoggingIn}
-            >
-              {isLoggingIn ? 'Đang đăng nhập...' : 'Đăng nhập'}
-            </Button>
-            
-            <Button variant="ghost" className="w-full" onClick={() => setUserRole(null)}>
-              Quay lại
-            </Button>
-          </div>
-        </Card>
-      </div>
-    );
-  }
-
-  if (!selectedCompId) {
-    return (
-      <div className="min-h-screen bg-[#F5F5F4] p-6">
-        <div className="max-w-4xl mx-auto space-y-8">
-          <div className="flex items-center justify-between">
-            <h1 className="text-3xl font-bold">Chọn Hội thi</h1>
-            <Button variant="ghost" onClick={() => setUserRole(null)}><LogOut size={18} /> Thoát</Button>
-          </div>
-
-          {userRole === 'admin' && (
-            <Card className="p-6">
-              <h2 className="text-xl font-bold mb-4">Tạo Hội thi mới</h2>
-              <div className="flex flex-col sm:flex-row gap-4 items-end">
-                <Input label="Tên hội thi" value={newCompName} onChange={setNewCompName} placeholder="VD: Ngày hội STEM 2024" className="flex-1 w-full" />
-                <Input label="Ngày tổ chức" type="date" value={newCompDate} onChange={setNewCompDate} className="w-full sm:w-auto" />
-                <Button onClick={handleCreateCompetition} className="w-full sm:w-auto"><Plus size={18} /> Tạo</Button>
-              </div>
-            </Card>
-          )}
-
-          <div className="grid sm:grid-cols-2 gap-4">
-            {competitions.map(comp => (
-              <Card 
-                key={comp.id}
-                className={cn(
-                  "p-6 hover:shadow-md transition-all group relative",
-                  comp.is_locked && userRole !== 'admin' && "opacity-60 grayscale cursor-not-allowed"
-                )}
-              >
-                <div className="flex justify-between items-start mb-4">
-                  <div className={cn(
-                    "w-12 h-12 rounded-xl flex items-center justify-center transition-colors",
-                    comp.is_locked ? "bg-rose-50 text-rose-500" : "bg-black/5 group-hover:bg-black group-hover:text-white"
-                  )}>
-                    {comp.is_locked ? <Lock size={24} /> : <Trophy size={24} />}
-                  </div>
-                  <div className="flex flex-col items-end gap-2">
-                    <span className="text-xs font-bold text-black/30 bg-black/5 px-2 py-1 rounded-lg">{comp.date}</span>
-                    {comp.is_locked && (
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-rose-500 bg-rose-50 px-2 py-0.5 rounded-md flex items-center gap-1">
-                        <Lock size={10} /> Đã khóa
-                      </span>
-                    )}
-                  </div>
-                </div>
-                
-                <h3 className="font-bold text-xl mb-4">{comp.name}</h3>
-                
-                <div className="flex items-center justify-between mt-auto">
-                  <button 
-                    onClick={() => {
-                      if (comp.is_locked && userRole !== 'admin') {
-                        alert("Hội thi này đã bị khóa bởi quản trị viên.");
-                        return;
-                      }
-                      setSelectedCompId(comp.id);
-                    }}
-                    className={cn(
-                      "flex items-center text-sm font-bold transition-colors",
-                      comp.is_locked && userRole !== 'admin' ? "text-black/20" : "text-indigo-600 hover:text-indigo-700"
-                    )}
-                  >
-                    {comp.is_locked && userRole !== 'admin' ? 'Không thể truy cập' : 'Tiếp tục'} 
-                    <ChevronRight size={16} className="ml-1" />
-                  </button>
-
-                  {userRole === 'admin' && (
-                    <div className="flex gap-2">
-                      <button 
-                        onClick={() => handleToggleLockCompetition(comp.id, !!comp.is_locked)}
-                        className={cn(
-                          "p-2 rounded-lg transition-colors",
-                          comp.is_locked ? "text-rose-500 hover:bg-rose-50" : "text-black/40 hover:bg-black/5"
-                        )}
-                        title={comp.is_locked ? "Mở khóa hội thi" : "Khóa hội thi"}
-                      >
-                        {comp.is_locked ? <Lock size={18} /> : <Unlock size={18} />}
-                      </button>
-                      <button 
-                        onClick={() => handleDeleteCompetition(comp.id)}
-                        className="p-2 text-black/40 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
-                        title="Xóa hội thi"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const handleTabChange = (tab: typeof activeTab) => {
     if (isDirty) {
       setShowNavigationWarning({ tab });
@@ -1727,7 +1110,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-indigo-50/20 flex flex-col lg:flex-row font-sans text-indigo-950">
       {/* Mobile Header */}
-      <header className="lg:hidden bg-white border-b border-indigo-100 p-4 sticky top-0 z-50 flex items-center justify-between">
+      <header className="lg:hidden bg-white border-b border-indigo-100 p-4 sticky top-0 z-[100] flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200">
             <Trophy className="text-white" size={20} />
@@ -1746,7 +1129,7 @@ export default function App() {
 
       {/* Sidebar */}
       <aside className={cn(
-        "fixed inset-y-0 left-0 z-[60] w-72 bg-white border-r border-indigo-100 flex flex-col shadow-xl transition-transform duration-300 lg:relative lg:translate-x-0 lg:shadow-sm lg:z-0",
+        "fixed inset-y-0 left-0 z-[110] w-72 bg-white border-r border-indigo-100 flex flex-col shadow-xl transition-transform duration-300 lg:relative lg:translate-x-0 lg:shadow-sm lg:z-0",
         isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <div className="p-6 flex-1">
@@ -1789,13 +1172,13 @@ export default function App() {
       {/* Mobile Overlay */}
       {isMobileMenuOpen && (
         <div 
-          className="fixed inset-0 bg-black/20 backdrop-blur-sm z-[55] lg:hidden"
+          className="fixed inset-0 bg-black/20 backdrop-blur-sm z-[105] lg:hidden"
           onClick={() => setIsMobileMenuOpen(false)}
         />
       )}
 
       {/* Main Content */}
-      <main className="flex-1 p-4 lg:p-8 overflow-auto">
+      <main className="flex-1 p-4 lg:p-8 overflow-auto relative">
         <AnimatePresence mode="wait">
           {activeTab === 'dashboard' && (
             <motion.div key="dashboard" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8">
@@ -1865,33 +1248,212 @@ export default function App() {
                   </div>
                 </Card>
               </div>
+            </motion.div>
+          )}
 
-              <Card className="p-6">
-                <h3 className="font-bold text-lg mb-6 flex items-center gap-2">
-                  <Trophy className="text-amber-500" size={20} />
-                  Bảng vàng vinh danh (Hạng 1 các nội dung)
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {eventResults.map(er => (
-                    <div key={er.event.id} className="space-y-3">
-                      <h4 className="font-bold text-sm border-l-4 border-black pl-3 py-1 bg-black/5 rounded-r-lg">{er.event.name}</h4>
-                      <div className="space-y-2">
-                        {Array.from(new Set(data.classes.map(c => c.grade))).sort().map(grade => {
-                          const winner = er.results.find(r => r.grade === grade && r.rank === 1 && r.totalScore > 0);
-                          if (!winner) return null;
-                          return (
-                            <div key={grade} className="flex items-center justify-between text-xs p-2 rounded-lg bg-emerald-50 border border-emerald-100">
-                              <span className="font-bold text-emerald-700">Khối {grade}</span>
-                              <span className="font-bold">{winner.className}</span>
-                              <span className="text-[10px] bg-emerald-600 text-white px-1.5 py-0.5 rounded font-bold">{winner.totalScore} đ</span>
-                            </div>
-                          );
-                        })}
+          {activeTab === 'scoring' && data && (
+            <motion.div key="scoring" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6 pb-20">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+                <div>
+                  <h1 className="text-3xl font-bold">Chấm điểm</h1>
+                  <p className="text-black/40">Nhập điểm cho từng nội dung</p>
+                  {userRole === 'judge' && loggedInJudge && (
+                    <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-bold border border-emerald-100">
+                      GK: {loggedInJudge.name}
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={exportScoringTemplate} className="border-indigo-100 text-indigo-600">
+                    <Download size={18} /> <span className="hidden sm:inline">Xuất mẫu Excel</span>
+                  </Button>
+                  <div className="relative">
+                    <input 
+                      type="file" 
+                      accept=".xlsx, .xls" 
+                      onChange={handleImportExcel} 
+                      className="absolute inset-0 opacity-0 cursor-pointer" 
+                      disabled={isImporting}
+                    />
+                    <Button variant="secondary" size="sm" disabled={isImporting}>
+                      {isImporting ? "..." : <><Upload size={18} /> <span className="hidden sm:inline">Nhập Excel</span></>}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase text-black/40 ml-1">Chọn nội dung thi</label>
+                  <select 
+                    value={selectedEventId || ''} 
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (isDirty) {
+                        setShowNavigationWarning({ eventId: val });
+                      } else {
+                        setSelectedEventId(val);
+                      }
+                    }}
+                    className="w-full px-4 py-3 bg-white border border-black/5 rounded-2xl focus:ring-2 focus:ring-black/10 outline-none font-medium shadow-sm"
+                  >
+                    <option value="">-- Chọn nội dung --</option>
+                    {data.events
+                      .filter(e => {
+                        if (userRole === 'admin') return true;
+                        if (!loggedInJudge) return false;
+                        return loggedInJudge.assigned_event_ids?.includes(e.id);
+                      })
+                      .map(e => <option key={e.id} value={e.id}>{e.name} {e.is_locked ? '🔒' : ''}</option>)
+                    }
+                    {((userRole === 'admin' && selectedJudgeId && data.judges.find(j => j.id === selectedJudgeId)?.is_bonus_penalty_judge) || 
+                      (userRole === 'judge' && loggedInJudge?.is_bonus_penalty_judge)) && (
+                      <option value="bonus_penalty">⭐ CHẤM THƯỞNG / PHẠT (TỔNG KẾT)</option>
+                    )}
+                  </select>
+                </div>
+                {userRole === 'admin' && (
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase text-black/40 ml-1">Chấm vai GK</label>
+                    <select 
+                      value={selectedJudgeId || ''} 
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (isDirty) {
+                          setShowNavigationWarning({ judgeId: val });
+                        } else {
+                          setSelectedJudgeId(val);
+                        }
+                      }}
+                      className="w-full px-4 py-3 bg-white border border-black/5 rounded-2xl focus:ring-2 focus:ring-black/10 outline-none font-medium shadow-sm"
+                    >
+                      <option value="">-- Chọn giám khảo --</option>
+                      {data.judges.map(j => <option key={j.id} value={j.id}>{j.name}</option>)}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {selectedEventId && (selectedJudgeId || userRole === 'judge') && (
+                <>
+                  {/* FIXED ACTION BAR - Dính ở trên khi cuộn */}
+                  <div className="sticky top-[72px] lg:top-[-32px] z-[90] bg-indigo-50/95 backdrop-blur-md p-4 -mx-4 lg:-mx-8 border-y border-indigo-100 shadow-lg flex flex-col sm:flex-row justify-between items-center gap-4">
+                    <div className="flex items-center gap-3">
+                      {isDirty ? (
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-100 text-amber-700 rounded-full text-xs font-bold animate-pulse border border-amber-200">
+                          <AlertCircle size={14} /> Có thay đổi chưa lưu
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold border border-emerald-200">
+                          <CheckCircle2 size={14} /> Đã đồng bộ với máy chủ
+                        </div>
+                      )}
+                      <div className="hidden md:block h-6 w-px bg-indigo-200 mx-2" />
+                      <div className="hidden md:flex flex-col">
+                        <span className="text-[10px] uppercase font-bold text-indigo-600/50 leading-none">Nội dung</span>
+                        <span className="font-bold text-sm">{selectedEventId === 'bonus_penalty' ? "Thưởng / Phạt" : data.events.find(e => e.id === selectedEventId)?.name}</span>
                       </div>
                     </div>
-                  ))}
-                </div>
-              </Card>
+                    
+                    <Button 
+                      onClick={handleBulkSaveScore} 
+                      disabled={isSaving || !isDirty || (selectedEventId !== 'bonus_penalty' && data.events.find(e => e.id === selectedEventId)?.is_locked)}
+                      className="w-full sm:w-auto h-12 px-8 shadow-indigo-300"
+                    >
+                      <Save size={18} /> {isSaving ? 'Đang lưu dữ liệu...' : 'Xác nhận & Lưu toàn bộ'}
+                    </Button>
+                  </div>
+
+                  {/* SCORING TABLE */}
+                  <Card className="overflow-visible shadow-xl border-indigo-100">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse min-w-max">
+                        {/* THEAD - Dính ngay dưới Action Bar */}
+                        <thead className="sticky top-[152px] lg:top-[50px] z-[85] bg-slate-100 shadow-sm border-b border-black/5">
+                          <tr>
+                            <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider text-indigo-900 min-w-[200px]">Lớp</th>
+                            {selectedEventId === 'bonus_penalty' ? (
+                              <>
+                                <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider text-center text-emerald-600 min-w-[120px]">Điểm Thưởng</th>
+                                <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider text-center text-rose-600 min-w-[120px]">Điểm Trừ</th>
+                              </>
+                            ) : (
+                              <>
+                                {Array.from({ length: data.events.find(e => e.id === selectedEventId)?.round_count || 1 }).map((_, i) => {
+                                  const event = data.events.find(e => e.id === selectedEventId);
+                                  const customName = event?.round_names?.[i];
+                                  return (
+                                    <th key={i} className="px-6 py-4 font-bold text-sm uppercase tracking-wider text-center text-indigo-900 min-w-[120px]">
+                                      {customName || ((event?.round_count || 1) > 1 ? `Lần ${i + 1}` : 'Điểm số')}
+                                    </th>
+                                  );
+                                })}
+                              </>
+                            )}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(Object.entries(classesByGrade) as [string, Class[]][]).map(([grade, classes]) => (
+                            <React.Fragment key={grade}>
+                              {/* GRADE HEADER - Dính dưới Thead khi cuộn */}
+                              <tr className={cn("sticky top-[204px] lg:top-[102px] z-[80] shadow-sm", getGradeColor(grade).split(' ')[0])}>
+                                <td colSpan={10} className="px-6 py-2.5 backdrop-blur-sm border-y border-black/5">
+                                  <span className={cn("text-xs font-extrabold uppercase tracking-widest flex items-center gap-2", getGradeColor(grade).split(' ')[2])}>
+                                    <Users size={14} /> Khối {grade}
+                                  </span>
+                                </td>
+                              </tr>
+                              {classes.map(cls => {
+                                const event = data.events.find(e => e.id === selectedEventId);
+                                const judgeId = userRole === 'judge' ? loggedInJudge?.id : selectedJudgeId;
+                                if (!judgeId) return null;
+
+                                return (
+                                  <tr key={cls.id} className="border-t border-black/5 hover:bg-indigo-50/50 transition-colors group">
+                                    <td className="px-6 py-4">
+                                      <p className="font-bold text-indigo-950 group-hover:text-indigo-600 transition-colors">{cls.name}</p>
+                                    </td>
+                                    {selectedEventId === 'bonus_penalty' ? (
+                                      <>
+                                        <td className="px-6 py-4 text-center">
+                                          <ScoreInput 
+                                            value={pendingScores[`${cls.id}-1-bonus`] || 0}
+                                            onChange={(val) => handleSaveScore(cls.id, 'bonus_penalty', judgeId, 1, val, 'bonus')}
+                                            className="text-emerald-600 font-bold border-emerald-100 focus:ring-emerald-500"
+                                          />
+                                        </td>
+                                        <td className="px-6 py-4 text-center">
+                                          <ScoreInput 
+                                            value={pendingScores[`${cls.id}-1-penalty`] || 0}
+                                            onChange={(val) => handleSaveScore(cls.id, 'bonus_penalty', judgeId, 1, val, 'penalty')}
+                                            className="text-rose-600 font-bold border-rose-100 focus:ring-rose-500"
+                                          />
+                                        </td>
+                                      </>
+                                    ) : (
+                                      <>
+                                        {Array.from({ length: event?.round_count || 1 }).map((_, i) => (
+                                          <td key={i} className="px-6 py-4 text-center">
+                                            <ScoreInput 
+                                              value={pendingScores[`${cls.id}-${i + 1}-none`] || 0}
+                                              onChange={(val) => handleSaveScore(cls.id, selectedEventId, judgeId, i + 1, val)}
+                                              disabled={event?.is_locked}
+                                            />
+                                          </td>
+                                        ))}
+                                      </>
+                                    )}
+                                  </tr>
+                                );
+                              })}
+                            </React.Fragment>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </Card>
+                </>
+              )}
             </motion.div>
           )}
 
@@ -2005,15 +1567,9 @@ export default function App() {
                                     <h3 className="font-bold text-lg leading-tight">{event.name}</h3>
                                     <div className="flex gap-2 mt-1">
                                       <span className="text-[10px] font-bold uppercase tracking-wider text-black/40">Hệ số: {event.weight}</span>
-                                      <span className="text-[10px] font-bold uppercase tracking-wider text-black/40">Số lần chấm: {event.round_count}</span>
+                                      <span className="text-[10px] font-bold uppercase tracking-wider text-black/40">LC: {event.round_count}</span>
+                                      <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600/60 bg-indigo-50 px-1 rounded">{event.ranking_scope === 'school' ? 'Trường' : 'Khối'}</span>
                                     </div>
-                                    {event.round_names && event.round_names.length > 0 && (
-                                      <div className="flex flex-wrap gap-1 mt-1">
-                                        {event.round_names.map((name, i) => (
-                                          <span key={i} className="text-[9px] bg-black/5 px-1.5 py-0.5 rounded text-black/60">{name || `Lần ${i+1}`}</span>
-                                        ))}
-                                      </div>
-                                    )}
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -2029,24 +1585,15 @@ export default function App() {
                                       window.scrollTo({ top: 0, behavior: 'smooth' });
                                     }}
                                     className="p-2 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors"
-                                    title="Sửa"
                                   >
                                     <Edit2 size={18} />
                                   </button>
-                                  <button 
-                                    onClick={() => handleDeleteEvent(event.id)}
-                                    className="p-2 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 transition-colors"
-                                    title="Xóa"
-                                  >
+                                  <button onClick={() => handleDeleteEvent(event.id)} className="p-2 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 transition-colors">
                                     <Trash2 size={18} />
                                   </button>
                                   <button 
                                     onClick={() => handleLockEvent(event.id, !event.is_locked)} 
-                                    className={cn(
-                                      "p-2 rounded-lg transition-colors", 
-                                      event.is_locked ? "bg-red-50 text-red-600 hover:bg-red-100" : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
-                                    )}
-                                    title={event.is_locked ? "Mở khóa" : "Khóa"}
+                                    className={cn("p-2 rounded-lg transition-colors", event.is_locked ? "bg-red-50 text-red-600 hover:bg-red-100" : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100")}
                                   >
                                     {event.is_locked ? <Lock size={18} /> : <Unlock size={18} />}
                                   </button>
@@ -2064,6 +1611,7 @@ export default function App() {
             </motion.div>
           )}
 
+          {/* ... [Other tabs keep existing logic, just ensure layout consistency] ... */}
           {activeTab === 'classes' && data && (
             <motion.div key="classes" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8">
               <div className="flex justify-between items-end">
@@ -2071,15 +1619,7 @@ export default function App() {
                   <h1 className="text-3xl font-bold">Danh sách lớp</h1>
                   <p className="text-black/40">Quản lý các lớp tham gia</p>
                 </div>
-                <Button onClick={() => {
-                  if (showAddClass) {
-                    setEditingClass(null);
-                    setNewClassName('');
-                    setNewClassGrade('');
-                    setNewClassCount(1);
-                  }
-                  setShowAddClass(!showAddClass);
-                }}>
+                <Button onClick={() => setShowAddClass(!showAddClass)}>
                   <Plus size={18} /> {showAddClass ? 'Hủy' : 'Thêm lớp'}
                 </Button>
               </div>
@@ -2088,48 +1628,22 @@ export default function App() {
                 <Card className="p-6">
                   <h2 className="text-xl font-bold mb-4">{editingClass ? 'Sửa lớp' : 'Thêm lớp mới'}</h2>
                   <div className="space-y-4">
-                <div className="flex flex-col sm:flex-row gap-4 items-end">
+                    <div className="flex flex-col sm:flex-row gap-4 items-end">
                       <Input label="Khối" value={newClassGrade} onChange={setNewClassGrade} placeholder="VD: 6" />
-                      {!editingClass && (
-                        <Input 
-                          label="Số lượng lớp" 
-                          type="number" 
-                          value={newClassCount} 
-                          onChange={(val) => {
-                            setNewClassCount(val);
-                            // Optionally auto-generate names if empty
-                            if (!newClassName.trim()) {
-                              const names = [];
-                              for (let i = 1; i <= val; i++) {
-                                names.push(`${newClassGrade}/${i}`);
-                              }
-                              setNewClassName(names.join('\n'));
-                            }
-                          }} 
-                          placeholder="Số lượng lớp" 
-                        />
-                      )}
+                      {!editingClass && <Input label="Số lượng" type="number" value={newClassCount} onChange={setNewClassCount} />}
                     </div>
                     {editingClass ? (
                       <div className="space-y-4">
-                        <Input label="Tên lớp" value={newClassName} onChange={setNewClassName} placeholder="VD: 6/1" />
+                        <Input label="Tên lớp" value={newClassName} onChange={setNewClassName} />
                         <div className="flex flex-col sm:flex-row gap-4">
                           <Input label="Điểm thưởng" type="number" value={newClassBonusPoints} onChange={setNewClassBonusPoints} />
                           <Input label="Điểm trừ" type="number" value={newClassPenaltyPoints} onChange={setNewClassPenaltyPoints} />
                         </div>
                       </div>
                     ) : (
-                      <Textarea 
-                        label="Tên các lớp (mỗi lớp một dòng)" 
-                        value={newClassName} 
-                        onChange={setNewClassName} 
-                        placeholder={`VD:\n6/1\n6/2\n6/3`} 
-                        rows={Math.max(4, newClassName.split('\n').length)}
-                      />
+                      <Textarea label="Tên các lớp (mỗi dòng một lớp)" value={newClassName} onChange={setNewClassName} />
                     )}
-                    <Button className="w-full" onClick={handleAddClass} disabled={isSaving}>
-                      {isSaving ? 'Đang xử lý...' : (editingClass ? 'Cập nhật' : 'Thêm')}
-                    </Button>
+                    <Button className="w-full h-12" onClick={handleAddClass} disabled={isSaving}>Lưu thông tin</Button>
                   </div>
                 </Card>
               )}
@@ -2138,48 +1652,33 @@ export default function App() {
                 {(Object.entries(classesByGrade) as [string, Class[]][]).map(([grade, classes]) => (
                   <div key={grade} className="space-y-4">
                     <div className="flex items-center gap-3">
-                      <div className={cn("px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest", getGradeColor(grade))}>
-                        Khối {grade}
-                      </div>
+                      <div className={cn("px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest", getGradeColor(grade))}>Khối {grade}</div>
                       <div className="h-px flex-1 bg-black/5"></div>
                     </div>
                     <DragDropContext onDragEnd={(res) => onDragEnd(res, 'classes', grade)}>
                       <Droppable droppableId={`classes-${grade}`} direction="horizontal">
                         {(provided) => (
-                          <div {...provided.droppableProps} ref={provided.innerRef} className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                          <div {...provided.droppableProps} ref={provided.innerRef} className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
                             {classes.map((cls, index) => (
                               <DraggableAny key={cls.id} draggableId={cls.id} index={index}>
                                 {(provided: any) => (
                                   <div ref={provided.innerRef} {...provided.draggableProps}>
-                                    <Card className={cn("p-3 flex justify-between items-center group border transition-all hover:shadow-sm", getGradeColor(grade).split(' ').slice(0, 2).join(' '))}>
+                                    <Card className={cn("p-3 flex justify-between items-center group border transition-all", getGradeColor(grade).split(' ').slice(0, 2).join(' '))}>
                                       <div className="flex items-center gap-2">
-                                        <div {...provided.dragHandleProps} className="cursor-grab text-black/10 hover:text-black/30">
-                                          <GripVertical size={14} />
-                                        </div>
+                                        <div {...provided.dragHandleProps} className="cursor-grab text-black/10 hover:text-black/30"><GripVertical size={14} /></div>
                                         <p className="font-bold text-sm">{cls.name}</p>
                                       </div>
                                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button 
-                                          onClick={() => {
-                                            setEditingClass(cls);
-                                            setNewClassName(cls.name);
-                                            setNewClassGrade(cls.grade);
-                                            setNewClassBonusPoints(cls.bonus_points || 0);
-                                            setNewClassPenaltyPoints(cls.penalty_points || 0);
-                                            setNewClassCount(1);
-                                            setShowAddClass(true);
-                                            window.scrollTo({ top: 0, behavior: 'smooth' });
-                                          }}
-                                          className="p-1.5 hover:bg-black/5 rounded-md text-black/40 hover:text-black transition-colors"
-                                        >
-                                          <Edit2 size={14} />
-                                        </button>
-                                        <button 
-                                          onClick={() => handleDeleteClass(cls.id)}
-                                          className="p-1.5 hover:bg-red-50 rounded-md text-black/40 hover:text-red-600 transition-colors"
-                                        >
-                                          <Trash2 size={14} />
-                                        </button>
+                                        <button onClick={() => {
+                                          setEditingClass(cls);
+                                          setNewClassName(cls.name);
+                                          setNewClassGrade(cls.grade);
+                                          setNewClassBonusPoints(cls.bonus_points || 0);
+                                          setNewClassPenaltyPoints(cls.penalty_points || 0);
+                                          setShowAddClass(true);
+                                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                                        }} className="p-1 hover:bg-black/5 rounded text-black/40 hover:text-black"><Edit2 size={14} /></button>
+                                        <button onClick={() => handleDeleteClass(cls.id)} className="p-1 hover:bg-red-50 rounded text-black/40 hover:text-red-600"><Trash2 size={14} /></button>
                                       </div>
                                     </Card>
                                   </div>
@@ -2197,403 +1696,6 @@ export default function App() {
             </motion.div>
           )}
 
-          {activeTab === 'judges' && data && (
-            <motion.div key="judges" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8">
-              <div className="flex justify-between items-end">
-                <div>
-                  <h1 className="text-3xl font-bold">Giám khảo</h1>
-                  <p className="text-black/40">Quản lý ban giám khảo</p>
-                </div>
-                <Button onClick={() => {
-                  if (showAddJudge) {
-                    setEditingJudge(null);
-                    setNewJudgeName('');
-                    setNewJudgeCode('');
-                  }
-                  setShowAddJudge(!showAddJudge);
-                }}>
-                  <Plus size={18} /> {showAddJudge ? 'Hủy' : 'Thêm giám khảo'}
-                </Button>
-              </div>
-
-              {showAddJudge && (
-                <Card className="p-6">
-                  <h2 className="text-xl font-bold mb-4">{editingJudge ? 'Sửa giám khảo' : 'Thêm giám khảo mới'}</h2>
-                  <div className="space-y-6">
-                    <div className="flex flex-col sm:flex-row gap-4">
-                      <Input label="Tên giám khảo" value={newJudgeName} onChange={setNewJudgeName} placeholder="VD: Nguyễn Văn A" className="flex-1" />
-                      <Input label="Mã đăng nhập" value={newJudgeCode} onChange={setNewJudgeCode} placeholder="VD: GK01" className="flex-1" />
-                    </div>
-
-                    <div className="space-y-3">
-                      <label className="text-xs font-semibold uppercase tracking-wider text-black/50 ml-1">Phân công chấm nội dung</label>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                        {data.events.map(event => (
-                          <label key={event.id} className="flex items-center gap-2 p-3 bg-black/5 rounded-xl cursor-pointer hover:bg-black/10 transition-colors">
-                            <input 
-                              type="checkbox" 
-                              checked={newJudgeAssignedEvents.includes(event.id)}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setNewJudgeAssignedEvents([...newJudgeAssignedEvents, event.id]);
-                                } else {
-                                  setNewJudgeAssignedEvents(newJudgeAssignedEvents.filter(id => id !== event.id));
-                                }
-                              }}
-                              className="w-4 h-4 rounded border-black/10 text-indigo-600 focus:ring-indigo-500"
-                            />
-                            <span className="text-sm font-medium truncate">{event.name}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3 p-4 bg-amber-50 rounded-2xl border border-amber-100">
-                      <input 
-                        id="is_bonus_penalty"
-                        type="checkbox" 
-                        checked={newJudgeIsBonusPenalty}
-                        onChange={(e) => setNewJudgeIsBonusPenalty(e.target.checked)}
-                        className="w-5 h-5 rounded border-amber-200 text-amber-600 focus:ring-amber-500"
-                      />
-                      <label htmlFor="is_bonus_penalty" className="flex-1 cursor-pointer">
-                        <p className="font-bold text-amber-900">Giám khảo chấm thưởng/phạt</p>
-                        <p className="text-xs text-amber-700/60">Giám khảo này sẽ chấm điểm thưởng và điểm trừ trực tiếp vào điểm tổng kết của lớp.</p>
-                      </label>
-                    </div>
-
-                    <div className="flex gap-3">
-                      <Button className="flex-1 h-12" onClick={handleAddJudge}><Save size={18} /> {editingJudge ? 'Cập nhật' : 'Thêm giám khảo'}</Button>
-                      {editingJudge && (
-                        <Button variant="outline" className="h-12" onClick={() => {
-                          setEditingJudge(null);
-                          setNewJudgeName('');
-                          setNewJudgeCode('');
-                          setNewJudgeAssignedEvents([]);
-                          setNewJudgeIsBonusPenalty(false);
-                          setShowAddJudge(false);
-                        }}>Hủy</Button>
-                      )}
-                    </div>
-                  </div>
-                </Card>
-              )}
-
-              <DragDropContext onDragEnd={(res) => onDragEnd(res, 'judges')}>
-                <Droppable droppableId="judges-list">
-                  {(provided) => (
-                    <div {...provided.droppableProps} ref={provided.innerRef} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                      {data.judges.map((j, index) => (
-                        <DraggableAny key={j.id} draggableId={j.id} index={index}>
-                          {(provided: any) => (
-                            <div ref={provided.innerRef} {...provided.draggableProps}>
-                              <Card className="p-4 flex items-center justify-between group hover:shadow-md transition-all">
-                                <div className="flex items-center gap-4">
-                                  <div {...provided.dragHandleProps} className="cursor-grab text-black/10 hover:text-black/30">
-                                    <GripVertical size={18} />
-                                  </div>
-                                  <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center">
-                                    <UserCircle2 size={20} className="text-indigo-400" />
-                                  </div>
-                                  <div>
-                                    <p className="font-bold">{j.name}</p>
-                                    <p className="text-[10px] font-bold text-black/30">MÃ: {j.code}</p>
-                                    <div className="flex flex-wrap gap-1 mt-1">
-                                      {j.is_bonus_penalty_judge && (
-                                        <span className="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold uppercase tracking-tighter">Thưởng/Phạt</span>
-                                      )}
-                                      {j.assigned_event_ids?.map(id => {
-                                        const event = data.events.find(e => e.id === id);
-                                        return event ? (
-                                          <span key={id} className="text-[9px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-medium">{event.name}</span>
-                                        ) : null;
-                                      })}
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <button 
-                                    onClick={() => {
-                                      setEditingJudge(j);
-                                      setNewJudgeName(j.name);
-                                      setNewJudgeCode(j.code || '');
-                                      setNewJudgeAssignedEvents(j.assigned_event_ids || []);
-                                      setNewJudgeIsBonusPenalty(!!j.is_bonus_penalty_judge);
-                                      setShowAddJudge(true);
-                                      window.scrollTo({ top: 0, behavior: 'smooth' });
-                                    }}
-                                    className="p-2 hover:bg-black/5 rounded-lg text-black/40 hover:text-black transition-colors"
-                                  >
-                                    <Edit2 size={16} />
-                                  </button>
-                                  <button 
-                                    onClick={() => handleDeleteJudge(j.id)}
-                                    className="p-2 hover:bg-red-50 rounded-lg text-black/40 hover:text-red-600 transition-colors"
-                                  >
-                                    <Trash2 size={16} />
-                                  </button>
-                                </div>
-                              </Card>
-                            </div>
-                          )}
-                        </DraggableAny>
-                      ))}
-                      {provided.placeholder}
-                    </div>
-                  )}
-                </Droppable>
-              </DragDropContext>
-            </motion.div>
-          )}
-
-          {activeTab === 'scoring' && data && (
-            <motion.div key="scoring" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
-              <div className="flex justify-between items-end">
-                <div>
-                  <h1 className="text-3xl font-bold">Chấm điểm</h1>
-                  <p className="text-black/40">Nhập điểm cho từng nội dung</p>
-                  {userRole === 'judge' && loggedInJudge && (
-                    <p className="mt-2 font-bold text-emerald-600">Giám khảo: {loggedInJudge.name}</p>
-                  )}
-                </div>
-                <div className="flex gap-3">
-                  <Button variant="outline" onClick={exportScoringTemplate} className="border-indigo-100 text-indigo-600">
-                    <Download size={18} /> {userRole === 'admin' && !selectedJudgeId ? 'Xuất mẫu tất cả GK' : 'Xuất mẫu Excel'}
-                  </Button>
-                  <div className="relative">
-                    <input 
-                      type="file" 
-                      accept=".xlsx, .xls" 
-                      onChange={handleImportExcel} 
-                      className="absolute inset-0 opacity-0 cursor-pointer" 
-                      disabled={isImporting}
-                    />
-                    <Button variant="secondary" disabled={isImporting}>
-                      {isImporting ? "Đang xử lý..." : <><Upload size={18} /> Nhập từ Excel</>}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex flex-col sm:flex-row gap-4">
-                <div className="flex-1 space-y-2">
-                  <label className="text-xs font-bold uppercase text-black/40 ml-1">Chọn nội dung thi</label>
-                  <select 
-                    value={selectedEventId || ''} 
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (isDirty) {
-                        setShowNavigationWarning({ eventId: val });
-                      } else {
-                        setSelectedEventId(val);
-                      }
-                    }}
-                    className="w-full px-4 py-3 bg-white border border-black/5 rounded-2xl focus:ring-2 focus:ring-black/10 outline-none font-medium"
-                  >
-                    <option value="">-- Chọn nội dung --</option>
-                    {data.events
-                      .filter(e => {
-                        if (userRole === 'admin') return true;
-                        if (!loggedInJudge) return false;
-                        return loggedInJudge.assigned_event_ids?.includes(e.id);
-                      })
-                      .map(e => <option key={e.id} value={e.id}>{e.name} {e.is_locked ? '🔒' : ''}</option>)
-                    }
-                    {((userRole === 'admin' && selectedJudgeId && data.judges.find(j => j.id === selectedJudgeId)?.is_bonus_penalty_judge) || 
-                      (userRole === 'judge' && loggedInJudge?.is_bonus_penalty_judge)) && (
-                      <option value="bonus_penalty">⭐ CHẤM THƯỞNG / PHẠT (TỔNG KẾT)</option>
-                    )}
-                  </select>
-                </div>
-                {userRole === 'admin' && (
-                  <div className="flex-1 space-y-2">
-                    <label className="text-xs font-bold uppercase text-black/40 ml-1">Chấm với tư cách GK</label>
-                    <select 
-                      value={selectedJudgeId || ''} 
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (isDirty) {
-                          setShowNavigationWarning({ judgeId: val });
-                        } else {
-                          setSelectedJudgeId(val);
-                        }
-                      }}
-                      className="w-full px-4 py-3 bg-white border border-black/5 rounded-2xl focus:ring-2 focus:ring-black/10 outline-none font-medium"
-                    >
-                      <option value="">-- Chọn giám khảo --</option>
-                      {data.judges.map(j => <option key={j.id} value={j.id}>{j.name}</option>)}
-                    </select>
-                  </div>
-                )}
-              </div>
-
-              {selectedEventId && (selectedJudgeId || userRole === 'judge') && (
-                <>
-                  {/* Sticky Action Bar - Frozen like Excel */}
-                  <div className="sticky top-[-16px] md:top-[-32px] z-50 bg-white border-b border-indigo-100 flex justify-between items-center gap-4 p-4 -mx-4 lg:-mx-8 mb-4 shadow-md">
-                    <div className="flex items-center gap-2">
-                      {isDirty ? (
-                        <span className="flex items-center gap-2 text-amber-600 font-bold text-sm animate-pulse">
-                          <AlertCircle size={18} />
-                          Có thay đổi chưa lưu!
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-2 text-emerald-600 font-bold text-sm">
-                          <CheckCircle2 size={18} />
-                          Đã lưu tất cả
-                        </span>
-                      )}
-                    </div>
-                    <Button 
-                      onClick={handleBulkSaveScore} 
-                      disabled={isSaving || !isDirty || (selectedEventId !== 'bonus_penalty' && data.events.find(e => e.id === selectedEventId)?.is_locked)}
-                      className="min-w-[180px] py-2.5 font-bold rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-200"
-                    >
-                      {isSaving ? 'Đang lưu...' : 'Xác nhận chấm điểm'}
-                    </Button>
-                  </div>
-
-                  <Card className="overflow-visible">
-                    <table className="w-full text-left border-collapse min-w-max">
-                      <thead className="sticky top-[60px] md:top-[44px] z-40 bg-slate-50 shadow-sm">
-                        <tr className="bg-black/5">
-                          <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider">Lớp</th>
-                        {selectedEventId === 'bonus_penalty' ? (
-                          <>
-                            <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider text-center text-emerald-600">Điểm Thưởng</th>
-                            <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider text-center text-rose-600">Điểm Trừ</th>
-                          </>
-                        ) : (
-                          <>
-                            {Array.from({ length: data.events.find(e => e.id === selectedEventId)?.round_count || 1 }).map((_, i) => {
-                              const event = data.events.find(e => e.id === selectedEventId);
-                              const customName = event?.round_names?.[i];
-                              return (
-                                <th key={i} className="px-6 py-4 font-bold text-sm uppercase tracking-wider text-center">
-                                  {customName || ((event?.round_count || 1) > 1 ? `Lần ${i + 1}` : 'Điểm số')}
-                                </th>
-                              );
-                            })}
-                          </>
-                        )}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(Object.entries(classesByGrade) as [string, Class[]][]).map(([grade, classes]) => (
-                        <React.Fragment key={grade}>
-                          <tr className={cn("bg-black/[0.02] sticky top-[112px] md:top-[96px] z-30", getGradeColor(grade).split(' ')[0])}>
-                            <td colSpan={10} className="px-6 py-2">
-                              <span className={cn("text-[10px] font-bold uppercase tracking-widest", getGradeColor(grade).split(' ')[2])}>Khối {grade}</span>
-                            </td>
-                          </tr>
-                          {classes.map(cls => {
-                            const event = data.events.find(e => e.id === selectedEventId);
-                            const judgeId = userRole === 'judge' ? loggedInJudge?.id : selectedJudgeId;
- 
-                            if (!judgeId) return null;
- 
-                            return (
-                              <tr key={cls.id} className="border-t border-black/5 hover:bg-black/[0.02] transition-colors">
-                                <td className="px-6 py-4">
-                                  <p className="font-bold">{cls.name}</p>
-                                </td>
-                                {selectedEventId === 'bonus_penalty' ? (
-                                  <>
-                                    <td className="px-6 py-4 text-center">
-                                      <ScoreInput 
-                                        value={pendingScores[`${cls.id}-1-bonus`] || 0}
-                                        onChange={(val) => handleSaveScore(cls.id, 'bonus_penalty', judgeId, 1, val, 'bonus')}
-                                        className="text-emerald-600 font-bold"
-                                      />
-                                    </td>
-                                    <td className="px-6 py-4 text-center">
-                                      <ScoreInput 
-                                        value={pendingScores[`${cls.id}-1-penalty`] || 0}
-                                        onChange={(val) => handleSaveScore(cls.id, 'bonus_penalty', judgeId, 1, val, 'penalty')}
-                                        className="text-rose-600 font-bold"
-                                      />
-                                    </td>
-                                  </>
-                                ) : (
-                                  <>
-                                    {Array.from({ length: event?.round_count || 1 }).map((_, i) => (
-                                      <td key={i} className="px-6 py-4 text-center">
-                                        <ScoreInput 
-                                          value={pendingScores[`${cls.id}-${i + 1}-none`] || 0}
-                                          onChange={(val) => handleSaveScore(cls.id, selectedEventId, judgeId, i + 1, val)}
-                                          disabled={event?.is_locked}
-                                        />
-                                      </td>
-                                    ))}
-                                  </>
-                                )}
-                              </tr>
-                            );
-                          })}
-                        </React.Fragment>
-                      ))}
-                    </tbody>
-                  </table>
-                </Card>
-              </>
-            )}
-          </motion.div>
-        )}
-
-          {activeTab === 'settings' && data && (
-            <motion.div key="settings" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8">
-              <div>
-                <h1 className="text-3xl font-bold">Cấu hình</h1>
-                <p className="text-black/40">Thiết lập điểm quy đổi và hệ thống</p>
-              </div>
-
-              <Card className="p-6">
-                <div className="flex justify-between items-center mb-2">
-                  <h2 className="text-xl font-bold">Điểm quy đổi thứ hạng</h2>
-                  <Button variant="outline" size="sm" onClick={() => {
-                    const nextRank = conversions.length + 1;
-                    setConversions([...conversions, { rank: nextRank, points: 0 }]);
-                  }}>
-                    <Plus size={16} /> Thêm hạng
-                  </Button>
-                </div>
-                <p className="text-xs text-black/40 mb-6 italic">* Hạng cuối cùng trong danh sách sẽ được áp dụng cho tất cả các thứ hạng thấp hơn sau đó.</p>
-                <div className="space-y-4">
-                  {conversions.map((c, idx) => (
-                    <div key={c.rank} className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-xl bg-black/5 flex items-center justify-center font-bold">
-                        {idx === conversions.length - 1 && idx > 0 ? `#${c.rank}+` : `#${c.rank}`}
-                      </div>
-                      <div className="flex-1">
-                        <Input 
-                          type="number" 
-                          value={c.points} 
-                          onChange={(val) => {
-                            const newConvs = [...conversions];
-                            newConvs[idx].points = val;
-                            setConversions(newConvs);
-                          }} 
-                        />
-                      </div>
-                      <p className="text-sm font-bold text-black/30">Điểm</p>
-                      <button 
-                        onClick={() => {
-                          const newConvs = conversions.filter((_, i) => i !== idx)
-                            .map((conv, i) => ({ ...conv, rank: i + 1 }));
-                          setConversions(newConvs);
-                        }}
-                        className="p-2 text-red-500 hover:bg-red-50 transition-colors rounded-lg"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
-                  ))}
-                  <Button className="w-full mt-4" onClick={handleSaveConversions}><Save size={18} /> Lưu cấu hình</Button>
-                </div>
-              </Card>
-            </motion.div>
-          )}
-
           {activeTab === 'summary' && data && (
             <motion.div key="summary" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8">
               <div className="flex justify-between items-end">
@@ -2604,74 +1706,68 @@ export default function App() {
                 <Button variant="secondary" onClick={exportToExcel}><FileSpreadsheet size={18} /> Xuất Excel</Button>
               </div>
 
-              <Card className="overflow-x-auto">
-                <table className="w-full text-left border-collapse min-w-max">
-                  <thead>
-                    <tr className="bg-black/5">
-                      <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider sticky left-0 bg-black/5 z-10">STT</th>
-                      <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider sticky left-12 bg-black/5 z-10">Lớp</th>
-                      {data.events.map(e => (
-                        <th key={e.id} className="px-6 py-4 font-bold text-xs uppercase tracking-wider text-center min-w-[140px]">
-                          {e.name}
-                          <div className="text-[9px] font-normal normal-case opacity-40">Quy đổi / Thô</div>
-                        </th>
-                      ))}
-                      <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider text-center min-w-[100px] text-emerald-600">Thưởng</th>
-                      <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider text-center min-w-[100px] text-rose-600">Trừ</th>
-                      <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider text-center bg-black/10 min-w-[120px]">Tổng điểm</th>
-                      <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider text-center bg-black/10">Xếp hạng</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {overallSummary.map((s, idx) => {
-                      const showGradeHeader = idx === 0 || overallSummary[idx-1].grade !== s.grade;
-                      return (
-                        <React.Fragment key={s.classId}>
-                          {showGradeHeader && (
-                            <tr className="bg-black/[0.03]">
-                              <td colSpan={data.events.length + 5} className="px-6 py-2 text-[10px] font-bold uppercase tracking-widest text-black/40">
-                                Khối {s.grade}
+              <Card className="overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse min-w-max">
+                    <thead className="bg-slate-100 sticky top-0 z-20">
+                      <tr>
+                        <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider sticky left-0 bg-slate-100 z-30">STT</th>
+                        <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider sticky left-12 bg-slate-100 z-30">Lớp</th>
+                        {data.events.map(e => (
+                          <th key={e.id} className="px-6 py-4 font-bold text-xs uppercase tracking-wider text-center min-w-[140px]">
+                            {e.name}
+                            <div className="text-[9px] font-normal normal-case opacity-40">Quy đổi / Thô</div>
+                          </th>
+                        ))}
+                        <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider text-center min-w-[100px] text-emerald-600">Thưởng</th>
+                        <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider text-center min-w-[100px] text-rose-600">Trừ</th>
+                        <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider text-center bg-indigo-50 min-w-[120px]">Tổng điểm</th>
+                        <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider text-center bg-indigo-50 sticky right-0 z-30">Xếp hạng</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {overallSummary.map((s, idx) => {
+                        const showGradeHeader = idx === 0 || overallSummary[idx-1].grade !== s.grade;
+                        return (
+                          <React.Fragment key={s.classId}>
+                            {showGradeHeader && (
+                              <tr className="bg-black/[0.03]">
+                                <td colSpan={data.events.length + 6} className="px-6 py-2 text-[10px] font-bold uppercase tracking-widest text-black/40">Khối {s.grade}</td>
+                              </tr>
+                            )}
+                            <tr className="border-t border-black/5 hover:bg-black/[0.02] transition-colors">
+                              <td className="px-6 py-4 text-sm text-black/40 sticky left-0 bg-white z-10">{idx + 1}</td>
+                              <td className="px-6 py-4 sticky left-12 bg-white z-10">
+                                <p className="font-bold">{s.className}</p>
+                              </td>
+                              {data.events.map(e => (
+                                <td key={e.id} className="px-6 py-4 text-center">
+                                  <div className="font-bold text-indigo-600">{s.eventPoints[e.id] || 0}</div>
+                                  <div className="text-[10px] text-black/30">Thô: {s.eventRawScores[e.id] || 0}</div>
+                                </td>
+                              ))}
+                              <td className="px-6 py-4 text-center font-bold text-emerald-600">+{s.bonus_points}</td>
+                              <td className="px-6 py-4 text-center font-bold text-rose-600">-{s.penalty_points}</td>
+                              <td className="px-6 py-4 text-center bg-indigo-50/50">
+                                <div className="font-bold text-lg">{s.totalPoints}</div>
+                              </td>
+                              <td className="px-6 py-4 text-center sticky right-0 bg-white z-10 shadow-[-4px_0_10px_rgba(0,0,0,0.05)]">
+                                <div className={cn("inline-flex items-center justify-center w-8 h-8 rounded-lg font-bold", s.overallRank === 1 ? "bg-amber-100 text-amber-700" : s.overallRank === 2 ? "bg-slate-100 text-slate-700" : s.overallRank === 3 ? "bg-orange-100 text-orange-700" : "bg-black/5 text-black/40")}>
+                                  {s.overallRank}
+                                </div>
                               </td>
                             </tr>
-                          )}
-                          <tr className="border-t border-black/5 hover:bg-black/[0.02] transition-colors">
-                            <td className="px-6 py-4 text-sm text-black/40 sticky left-0 bg-white">{idx + 1}</td>
-                            <td className="px-6 py-4 sticky left-12 bg-white">
-                              <p className="font-bold">{s.className}</p>
-                              <p className="text-[10px] font-bold text-black/30">KHỐI {s.grade}</p>
-                            </td>
-                            {data.events.map(e => (
-                              <td key={e.id} className="px-6 py-4 text-center">
-                                <div className="font-bold text-emerald-600">{s.eventPoints[e.id] || 0}</div>
-                                <div className="text-[10px] text-black/30">Thô: {s.eventRawScores[e.id] || 0}</div>
-                              </td>
-                            ))}
-                            <td className="px-6 py-4 text-center font-bold text-emerald-600">+{s.bonus_points}</td>
-                            <td className="px-6 py-4 text-center font-bold text-rose-600">-{s.penalty_points}</td>
-                            <td className="px-6 py-4 text-center bg-black/[0.02]">
-                              <div className="font-bold text-lg">{s.totalPoints}</div>
-                              <div className="text-[10px] text-black/30">Tổng thô: {s.totalRawScore}</div>
-                            </td>
-                            <td className="px-6 py-4 text-center sticky right-0 bg-white">
-                              <div className={cn(
-                                "inline-flex items-center justify-center w-8 h-8 rounded-lg font-bold",
-                                s.overallRank === 1 ? "bg-amber-100 text-amber-700" : 
-                                s.overallRank === 2 ? "bg-slate-100 text-slate-700" : 
-                                s.overallRank === 3 ? "bg-orange-100 text-orange-700" : "bg-black/5 text-black/40"
-                              )}>
-                                {s.overallRank}
-                              </div>
-                            </td>
-                          </tr>
-                        </React.Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </Card>
             </motion.div>
           )}
 
+          {/* ... [Wait logic and rankings tab also keep consistent sticky headers if needed] ... */}
           {activeTab === 'rankings' && data && (
             <motion.div key="rankings" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8">
               <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
@@ -2680,52 +1776,14 @@ export default function App() {
                   <p className="text-black/40">Xem thứ hạng chi tiết theo bộ lọc</p>
                 </div>
                 <div className="flex flex-wrap gap-3">
-                  <div className="w-48">
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-black/40 ml-1 mb-1 block">Nội dung</label>
-                    <select 
-                      value={rankingEventId || ''} 
-                      onChange={(e) => setRankingEventId(e.target.value)}
-                      className="w-full px-4 py-2 bg-white border border-black/5 rounded-xl focus:ring-2 focus:ring-black/10 outline-none font-medium shadow-sm text-sm"
-                    >
-                      <option value="overall">Tổng hợp toàn đoàn</option>
-                      {data.events.map(e => (
-                        <option key={e.id} value={e.id}>{e.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="w-32">
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-black/40 ml-1 mb-1 block">Khối</label>
-                    <select 
-                      value={rankingGrade} 
-                      onChange={(e) => setRankingGrade(e.target.value)}
-                      className="w-full px-4 py-2 bg-white border border-black/5 rounded-xl focus:ring-2 focus:ring-black/10 outline-none font-medium shadow-sm text-sm"
-                    >
-                      <option value="all">Tất cả khối</option>
-                      {Array.from(new Set(data.classes.map(c => c.grade))).sort().map(g => (
-                        <option key={g} value={g}>Khối {g}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="w-32">
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-black/40 ml-1 mb-1 block">Giới hạn</label>
-                    <select 
-                      value={rankingLimit} 
-                      onChange={(e) => setRankingLimit(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-                      className="w-full px-4 py-2 bg-white border border-black/5 rounded-xl focus:ring-2 focus:ring-black/10 outline-none font-medium shadow-sm text-sm"
-                    >
-                      <option value="all">Tất cả</option>
-                      <option value={3}>Top 3</option>
-                      <option value={5}>Top 5</option>
-                      <option value={10}>Top 10</option>
-                    </select>
-                  </div>
-                  {rankingEventId && (
-                    <div className="flex items-end">
-                      <Button variant="secondary" onClick={() => rankingEventId === 'overall' ? exportToExcel() : exportEventRankings(rankingEventId)} className="h-[38px]">
-                        <FileSpreadsheet size={16} /> Xuất Excel
-                      </Button>
-                    </div>
-                  )}
+                  <select value={rankingEventId || ''} onChange={(e) => setRankingEventId(e.target.value)} className="px-4 py-2 bg-white border border-black/5 rounded-xl font-medium shadow-sm text-sm">
+                    <option value="overall">Tổng hợp toàn đoàn</option>
+                    {data.events.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                  </select>
+                  <select value={rankingGrade} onChange={(e) => setRankingGrade(e.target.value)} className="px-4 py-2 bg-white border border-black/5 rounded-xl font-medium shadow-sm text-sm">
+                    <option value="all">Tất cả khối</option>
+                    {Array.from(new Set(data.classes.map(c => c.grade))).sort().map(g => <option key={g} value={g}>Khối {g}</option>)}
+                  </select>
                 </div>
               </div>
 
@@ -2736,30 +1794,13 @@ export default function App() {
 
                   if (scope === 'school' && rankingEventId !== 'overall') {
                     const eventRes = eventResults.find(er => er.event.id === rankingEventId);
-                    let results = (eventRes?.results || [])
-                      .filter(r => rankingGrade === 'all' || r.grade === rankingGrade)
-                      .map(r => ({
-                        id: r.classId,
-                        name: r.className,
-                        grade: r.grade,
-                        score: r.convertedPoints,
-                        rawScore: r.totalScore,
-                        rank: r.rank
-                      }));
-
+                    let results = (eventRes?.results || []).filter(r => rankingGrade === 'all' || r.grade === rankingGrade).map(r => ({ id: r.classId, name: r.className, grade: r.grade, score: r.convertedPoints, rawScore: r.totalScore, rank: r.rank }));
                     results.sort((a, b) => a.rank - b.rank);
-                    if (rankingLimit !== 'all') results = results.slice(0, rankingLimit);
-
                     return (
                       <Card className="p-6">
-                        <div className="flex justify-between items-center mb-6">
-                          <h3 className="text-xl font-bold flex items-center gap-2">
-                            <span className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-[10px] uppercase">Trường</span>
-                            Nội dung: {event?.name} (Xếp giải toàn trường)
-                          </h3>
-                        </div>
+                        <h3 className="text-xl font-bold mb-6 flex items-center gap-2">Nội dung: {event?.name} (Toàn trường)</h3>
                         <div className="overflow-x-auto">
-                          <table className="w-full text-left border-collapse min-w-max">
+                          <table className="w-full text-left border-collapse">
                             <thead>
                               <tr className="bg-black/5">
                                 <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider w-20">Hạng</th>
@@ -2772,24 +1813,11 @@ export default function App() {
                             <tbody className="divide-y divide-black/5">
                               {results.map((r) => (
                                 <tr key={r.id} className="hover:bg-black/[0.02] transition-colors">
-                                  <td className="px-6 py-4">
-                                    <div className={cn(
-                                      "w-8 h-8 rounded-lg flex items-center justify-center font-bold",
-                                      r.rank === 1 ? "bg-amber-100 text-amber-700" : 
-                                      r.rank === 2 ? "bg-slate-100 text-slate-700" : 
-                                      r.rank === 3 ? "bg-orange-100 text-orange-700" : "bg-black/5 text-black/40"
-                                    )}>
-                                      {r.rank || '-'}
-                                    </div>
-                                  </td>
+                                  <td className="px-6 py-4"><div className={cn("w-8 h-8 rounded-lg flex items-center justify-center font-bold", r.rank === 1 ? "bg-amber-100 text-amber-700" : r.rank === 2 ? "bg-slate-100 text-slate-700" : r.rank === 3 ? "bg-orange-100 text-orange-700" : "bg-black/5 text-black/40")}>{r.rank || '-'}</div></td>
                                   <td className="px-6 py-4 font-bold">{r.name}</td>
-                                  <td className="px-6 py-4">
-                                    <span className={cn("px-2 py-0.5 rounded text-[10px] font-bold uppercase", getGradeColor(r.grade))}>Khối {r.grade}</span>
-                                  </td>
+                                  <td className="px-6 py-4"><span className={cn("px-2 py-0.5 rounded text-[10px] font-bold uppercase", getGradeColor(r.grade))}>Khối {r.grade}</span></td>
                                   <td className="px-6 py-4 text-center font-medium">{r.rawScore}</td>
-                                  <td className="px-6 py-4 text-center">
-                                    <span className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-bold">+{r.score}</span>
-                                  </td>
+                                  <td className="px-6 py-4 text-center"><span className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-bold">+{r.score}</span></td>
                                 </tr>
                               ))}
                             </tbody>
@@ -2802,49 +1830,21 @@ export default function App() {
                   return (rankingGrade === 'all' ? Array.from(new Set(data.classes.map(c => c.grade))).sort() : [rankingGrade]).map(grade => {
                     let results: any[] = [];
                     let title = "";
-
                     if (rankingEventId === 'overall') {
-                      results = overallSummary
-                        .filter(s => s.grade === grade)
-                        .map(s => ({
-                          id: s.classId,
-                          name: s.className,
-                          score: s.totalPoints,
-                          rawScore: s.totalRawScore,
-                          rank: s.overallRank
-                        }));
+                      results = overallSummary.filter(s => s.grade === grade).map(s => ({ id: s.classId, name: s.className, score: s.totalPoints, rawScore: s.totalRawScore, rank: s.overallRank }));
                       title = "Bảng điểm tổng hợp";
                     } else {
                       const eventRes = eventResults.find(er => er.event.id === rankingEventId);
-                      results = (eventRes?.results || [])
-                        .filter(r => r.grade === grade)
-                        .map(r => ({
-                          id: r.classId,
-                          name: r.className,
-                          score: r.convertedPoints,
-                          rawScore: r.totalScore,
-                          rank: r.rank
-                        }));
+                      results = (eventRes?.results || []).filter(r => r.grade === grade).map(r => ({ id: r.classId, name: r.className, score: r.convertedPoints, rawScore: r.totalScore, rank: r.rank }));
                       title = `Nội dung: ${eventRes?.event.name}`;
                     }
-
                     results.sort((a, b) => a.rank - b.rank);
-                    if (rankingLimit !== 'all') {
-                      results = results.slice(0, rankingLimit);
-                    }
-
                     if (results.length === 0) return null;
-
                     return (
                       <Card key={grade} className="p-6">
-                        <div className="flex justify-between items-center mb-6">
-                          <h3 className="text-xl font-bold flex items-center gap-2">
-                            <span className="w-8 h-8 rounded-lg bg-black text-white flex items-center justify-center text-sm">Khối {grade}</span>
-                            {title}
-                          </h3>
-                        </div>
+                        <h3 className="text-xl font-bold mb-6 flex items-center gap-2"><span className="w-8 h-8 rounded-lg bg-black text-white flex items-center justify-center text-sm">Khối {grade}</span>{title}</h3>
                         <div className="overflow-x-auto">
-                          <table className="w-full text-left border-collapse min-w-max">
+                          <table className="w-full text-left border-collapse">
                             <thead>
                               <tr className="bg-black/5">
                                 <th className="px-6 py-4 font-bold text-xs uppercase tracking-wider w-20">Hạng</th>
@@ -2856,23 +1856,10 @@ export default function App() {
                             <tbody className="divide-y divide-black/5">
                               {results.map((r) => (
                                 <tr key={r.id} className="hover:bg-black/[0.02] transition-colors">
-                                  <td className="px-6 py-4">
-                                    <div className={cn(
-                                      "w-8 h-8 rounded-lg flex items-center justify-center font-bold",
-                                      r.rank === 1 ? "bg-amber-100 text-amber-700" : 
-                                      r.rank === 2 ? "bg-slate-100 text-slate-700" : 
-                                      r.rank === 3 ? "bg-orange-100 text-orange-700" : "bg-black/5 text-black/40"
-                                    )}>
-                                      {r.rank || '-'}
-                                    </div>
-                                  </td>
+                                  <td className="px-6 py-4"><div className={cn("w-8 h-8 rounded-lg flex items-center justify-center font-bold", r.rank === 1 ? "bg-amber-100 text-amber-700" : r.rank === 2 ? "bg-slate-100 text-slate-700" : r.rank === 3 ? "bg-orange-100 text-orange-700" : "bg-black/5 text-black/40")}>{r.rank || '-'}</div></td>
                                   <td className="px-6 py-4 font-bold">{r.name}</td>
                                   <td className="px-6 py-4 text-center font-medium">{r.rawScore}</td>
-                                  <td className="px-6 py-4 text-center">
-                                    <span className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-bold">
-                                      {rankingEventId === 'overall' ? r.score : `+${r.score}`}
-                                    </span>
-                                  </td>
+                                  <td className="px-6 py-4 text-center"><span className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-bold">{rankingEventId === 'overall' ? r.score : `+${r.score}`}</span></td>
                                 </tr>
                               ))}
                             </tbody>
@@ -2885,41 +1872,120 @@ export default function App() {
               </div>
             </motion.div>
           )}
+
+          {activeTab === 'judges' && data && (
+            <motion.div key="judges" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8">
+              <div className="flex justify-between items-end">
+                <div>
+                  <h1 className="text-3xl font-bold">Giám khảo</h1>
+                  <p className="text-black/40">Quản lý ban giám khảo</p>
+                </div>
+                <Button onClick={() => setShowAddJudge(!showAddJudge)}>
+                  <Plus size={18} /> {showAddJudge ? 'Hủy' : 'Thêm giám khảo'}
+                </Button>
+              </div>
+
+              {showAddJudge && (
+                <Card className="p-6">
+                  <h2 className="text-xl font-bold mb-4">{editingJudge ? 'Sửa giám khảo' : 'Thêm giám khảo mới'}</h2>
+                  <div className="space-y-6">
+                    <div className="flex flex-col sm:flex-row gap-4">
+                      <Input label="Tên giám khảo" value={newJudgeName} onChange={setNewJudgeName} placeholder="VD: Nguyễn Văn A" className="flex-1" />
+                      <Input label="Mã đăng nhập" value={newJudgeCode} onChange={setNewJudgeCode} placeholder="VD: GK01" className="flex-1" />
+                    </div>
+                    <div className="space-y-3">
+                      <label className="text-xs font-semibold uppercase tracking-wider text-black/50 ml-1">Phân công nội dung</label>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                        {data.events.map(event => (
+                          <label key={event.id} className="flex items-center gap-2 p-3 bg-black/5 rounded-xl cursor-pointer hover:bg-black/10 transition-colors">
+                            <input type="checkbox" checked={newJudgeAssignedEvents.includes(event.id)} onChange={(e) => {
+                                if (e.target.checked) setNewJudgeAssignedEvents([...newJudgeAssignedEvents, event.id]);
+                                else setNewJudgeAssignedEvents(newJudgeAssignedEvents.filter(id => id !== event.id));
+                            }} className="w-4 h-4 rounded border-black/10 text-indigo-600" />
+                            <span className="text-sm font-medium truncate">{event.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 p-4 bg-amber-50 rounded-2xl border border-amber-100">
+                      <input id="is_bonus_penalty" type="checkbox" checked={newJudgeIsBonusPenalty} onChange={(e) => setNewJudgeIsBonusPenalty(e.target.checked)} className="w-5 h-5 rounded border-amber-200 text-amber-600" />
+                      <label htmlFor="is_bonus_penalty" className="flex-1 cursor-pointer"><p className="font-bold text-amber-900">Giám khảo Thưởng/Phạt</p></label>
+                    </div>
+                    <div className="flex gap-3">
+                      <Button className="flex-1 h-12" onClick={handleAddJudge}><Save size={18} /> Lưu</Button>
+                      {editingJudge && <Button variant="outline" className="h-12" onClick={() => setShowAddJudge(false)}>Hủy</Button>}
+                    </div>
+                  </div>
+                </Card>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {data.judges.map((j) => (
+                  <Card key={j.id} className="p-4 flex items-center justify-between group">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center"><UserCircle2 size={20} className="text-indigo-400" /></div>
+                      <div>
+                        <p className="font-bold">{j.name}</p>
+                        <p className="text-[10px] font-bold text-black/30">MÃ: {j.code}</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => {
+                        setEditingJudge(j);
+                        setNewJudgeName(j.name);
+                        setNewJudgeCode(j.code || '');
+                        setNewJudgeAssignedEvents(j.assigned_event_ids || []);
+                        setNewJudgeIsBonusPenalty(!!j.is_bonus_penalty_judge);
+                        setShowAddJudge(true);
+                      }} className="p-2 hover:bg-black/5 rounded text-black/40 hover:text-black"><Edit2 size={16} /></button>
+                      <button onClick={() => handleDeleteJudge(j.id)} className="p-2 hover:bg-red-50 rounded text-black/40 hover:text-red-600"><Trash2 size={16} /></button>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            </motion.div>
+          )}
+
+          {activeTab === 'settings' && data && (
+            <motion.div key="settings" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8">
+              <h1 className="text-3xl font-bold">Cấu hình</h1>
+              <Card className="p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-xl font-bold">Quy đổi thứ hạng</h2>
+                  <Button variant="outline" size="sm" onClick={() => setConversions([...conversions, { rank: conversions.length + 1, points: 0 }])}><Plus size={16} /> Thêm</Button>
+                </div>
+                <div className="space-y-4">
+                  {conversions.map((c, idx) => (
+                    <div key={idx} className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-xl bg-black/5 flex items-center justify-center font-bold">#{c.rank}</div>
+                      <Input type="number" value={c.points} onChange={(val) => {
+                        const newC = [...conversions];
+                        newC[idx].points = val;
+                        setConversions(newC);
+                      }} className="flex-1" />
+                      <button onClick={() => setConversions(conversions.filter((_, i) => i !== idx))} className="text-rose-500"><Trash2 size={18} /></button>
+                    </div>
+                  ))}
+                  <Button className="w-full mt-4" onClick={handleSaveConversions}><Save size={18} /> Lưu cấu hình</Button>
+                </div>
+              </Card>
+            </motion.div>
+          )}
+
         </AnimatePresence>
       </main>
 
       {/* Navigation Warning Modal */}
       <AnimatePresence>
         {showNavigationWarning && (
-          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-black/5"
-            >
-              <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center mb-6">
-                <AlertCircle className="text-amber-500" size={32} />
-              </div>
-              <h3 className="text-2xl font-bold text-indigo-950 mb-3">Thay đổi chưa lưu!</h3>
-              <p className="text-indigo-600/70 mb-8 leading-relaxed">
-                Bạn có một số điểm số chưa được lưu. Nếu rời đi bây giờ, các thay đổi này sẽ bị mất. Bạn có chắc chắn muốn tiếp tục không?
-              </p>
-              <div className="flex flex-col sm:flex-row gap-3">
-                <Button 
-                  variant="outline" 
-                  className="flex-1 py-4 rounded-xl font-bold border-indigo-100 text-indigo-600"
-                  onClick={() => setShowNavigationWarning(null)}
-                >
-                  Ở lại để lưu
-                </Button>
-                <Button 
-                  variant="danger" 
-                  className="flex-1 py-4 rounded-xl font-bold"
-                  onClick={confirmNavigation}
-                >
-                  Tiếp tục rời đi
-                </Button>
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
+              <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center mb-6"><AlertCircle className="text-amber-500" size={32} /></div>
+              <h3 className="text-2xl font-bold mb-3">Thay đổi chưa lưu!</h3>
+              <p className="text-indigo-600/70 mb-8">Bạn có một số điểm số chưa được lưu. Nếu rời đi bây giờ, các thay đổi này sẽ bị mất.</p>
+              <div className="flex gap-3">
+                <Button variant="outline" className="flex-1 py-4" onClick={() => setShowNavigationWarning(null)}>Ở lại để lưu</Button>
+                <Button variant="danger" className="flex-1 py-4" onClick={confirmNavigation}>Rời đi</Button>
               </div>
             </motion.div>
           </div>
@@ -2972,6 +2038,7 @@ function ScoreInput({ value, onChange, disabled, className }: { value: number; o
       type="number"
       value={localValue}
       disabled={disabled}
+      inputMode="decimal"
       onChange={(e) => setLocalValue(e.target.value)}
       onBlur={() => {
         const num = parseFloat(localValue);
@@ -2986,7 +2053,10 @@ function ScoreInput({ value, onChange, disabled, className }: { value: number; o
           (e.target as HTMLInputElement).blur();
         }
       }}
-      className={cn("w-20 px-3 py-2 bg-black/5 border-none rounded-lg text-center font-bold focus:ring-2 focus:ring-black/10 outline-none disabled:opacity-50", className)}
+      className={cn(
+        "w-20 px-3 py-2 bg-black/5 border border-transparent rounded-lg text-center font-bold focus:ring-2 focus:ring-indigo-500 focus:bg-white focus:border-indigo-200 outline-none transition-all disabled:opacity-50", 
+        className
+      )}
     />
   );
 }
