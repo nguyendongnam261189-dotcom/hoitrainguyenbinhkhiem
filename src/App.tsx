@@ -379,6 +379,10 @@ export default function App() {
       if (res.ok) {
         setNewEventName('');
         setNewEventRankingScope('grade');
+        setNewEventWeight(1);
+        setNewEventRounds(1);
+        setNewEventJudgeCount(1);
+        setNewEventRoundNames([]);
         setEditingEvent(null);
         setShowAddEvent(false);
         fetchFullData(selectedCompId!);
@@ -393,6 +397,10 @@ export default function App() {
       if (res.ok) {
         setNewEventName('');
         setNewEventRankingScope('grade');
+        setNewEventWeight(1);
+        setNewEventRounds(1);
+        setNewEventJudgeCount(1);
+        setNewEventRoundNames([]);
         setShowAddEvent(false);
         fetchFullData(selectedCompId!);
       }
