@@ -232,6 +232,8 @@ export default function App() {
   const [editingJudge, setEditingJudge] = useState<Judge | null>(null);
   const [newJudgeName, setNewJudgeName] = useState('');
   const [newJudgeCode, setNewJudgeCode] = useState('');
+  const [newJudgeAssignedEvents, setNewJudgeAssignedEvents] = useState<string[]>([]);
+  const [newJudgeIsBonusPenalty, setNewJudgeIsBonusPenalty] = useState(false);
   const [judgeLoginCode, setJudgeLoginCode] = useState('');
   const [loggedInJudge, setLoggedInJudge] = useState<Judge | null>(null);
   const [loginError, setLoginError] = useState('');
@@ -457,15 +459,25 @@ export default function App() {
   const handleAddJudge = async () => {
     if (!newJudgeName || !newJudgeCode) return;
     
+    const payload = { 
+      name: newJudgeName, 
+      code: newJudgeCode, 
+      competition_id: selectedCompId,
+      assigned_event_ids: newJudgeAssignedEvents,
+      is_bonus_penalty_judge: newJudgeIsBonusPenalty
+    };
+
     if (editingJudge) {
       const res = await fetch(`/api/judges/${editingJudge.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newJudgeName, code: newJudgeCode })
+        body: JSON.stringify(payload)
       });
       if (res.ok) {
         setNewJudgeName('');
         setNewJudgeCode('');
+        setNewJudgeAssignedEvents([]);
+        setNewJudgeIsBonusPenalty(false);
         setEditingJudge(null);
         setShowAddJudge(false);
         fetchFullData(selectedCompId!);
@@ -475,11 +487,13 @@ export default function App() {
       const res = await fetch('/api/judges', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newJudgeName, code: newJudgeCode, competition_id: selectedCompId, order })
+        body: JSON.stringify({ ...payload, order })
       });
       if (res.ok) {
         setNewJudgeName('');
         setNewJudgeCode('');
+        setNewJudgeAssignedEvents([]);
+        setNewJudgeIsBonusPenalty(false);
         setShowAddJudge(false);
         fetchFullData(selectedCompId!);
       }
@@ -708,6 +722,7 @@ export default function App() {
         ws.mergeCells(gradeRow.number, 3, gradeRow.number, 4 + (judgesToExport.length * effectiveRoundCount) - 1);
         gradeRow.getCell(3).font = { bold: true, color: { argb: 'FF0000FF' } };
         gradeRow.getCell(3).alignment = { horizontal: 'right' };
+        gradeRow.getCell(3).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE9F5FF' } };
 
         const gradeClasses = data.classes.filter(c => c.grade === grade);
         gradeClasses.forEach((cls, idx) => {
@@ -932,12 +947,10 @@ export default function App() {
       const classResults = data.classes.map(cls => {
         const clsScores = eventScores.filter(s => s.class_id === cls.id);
         
-        // Calculate total score: sum(regular) + sum(bonus) - sum(penalty)
+        // Calculate total score: sum(regular)
         const regularScore = clsScores.filter(s => !s.category || s.category === 'none').reduce((sum, s) => sum + s.score, 0);
-        const bonusScore = clsScores.filter(s => s.category === 'bonus').reduce((sum, s) => sum + s.score, 0);
-        const penaltyScore = clsScores.filter(s => s.category === 'penalty').reduce((sum, s) => sum + s.score, 0);
         
-        const totalScore = regularScore + bonusScore - penaltyScore;
+        const totalScore = regularScore;
         const hasScores = clsScores.length > 0;
         
         // Group scores by judge for display
@@ -1009,9 +1022,19 @@ export default function App() {
         totalRawScore += raw;
       });
 
-      // Add bonus and penalty points
+      // Add bonus and penalty points from manual entry
       totalPoints += (cls.bonus_points || 0);
       totalPoints -= (cls.penalty_points || 0);
+
+      // Add bonus and penalty points from judges
+      const judgeBonusScores = data.scores.filter(s => s.class_id === cls.id && s.event_id === 'bonus_penalty' && s.category === 'bonus');
+      const judgePenaltyScores = data.scores.filter(s => s.class_id === cls.id && s.event_id === 'bonus_penalty' && s.category === 'penalty');
+      
+      const totalJudgeBonus = judgeBonusScores.reduce((sum, s) => sum + s.score, 0);
+      const totalJudgePenalty = judgePenaltyScores.reduce((sum, s) => sum + s.score, 0);
+      
+      totalPoints += totalJudgeBonus;
+      totalPoints -= totalJudgePenalty;
 
       return {
         classId: cls.id,
@@ -1021,8 +1044,8 @@ export default function App() {
         eventRawScores,
         totalPoints,
         totalRawScore,
-        bonus_points: cls.bonus_points || 0,
-        penalty_points: cls.penalty_points || 0
+        bonus_points: (cls.bonus_points || 0) + totalJudgeBonus,
+        penalty_points: (cls.penalty_points || 0) + totalJudgePenalty
       };
     });
 
@@ -1127,6 +1150,7 @@ export default function App() {
       worksheet.mergeCells(currentRow, 1, currentRow, maxCols);
       gradeRow.getCell(1).font = { bold: true, color: { argb: 'FF0000FF' }, size: 12 };
       gradeRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+      gradeRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE9F5FF' } };
       gradeRow.getCell(1).border = {
         top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' }
       };
@@ -1180,12 +1204,12 @@ export default function App() {
     // 1. Overall Summary Sheet
     const wsSummary = workbook.addWorksheet("TỔNG HỢP");
     const titleRow = wsSummary.addRow([`BẢNG TỔNG HỢP KẾT QUẢ - ${data.competition.name.toUpperCase()}`]);
-    wsSummary.mergeCells(1, 1, 1, data.events.length + 4);
+    wsSummary.mergeCells(1, 1, 1, data.events.length + 6);
     titleRow.getCell(1).font = { bold: true, color: { argb: 'FFFF0000' }, size: 16 };
     titleRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
     wsSummary.addRow([]);
 
-    const headerCols = ['STT', 'LỚP', ...data.events.map(e => e.name), 'ĐIỂM THƯỞNG', 'ĐIỂM TRỪ', 'TỔNG ĐIỂM', 'XẾP HẠNG'];
+    const headerCols = ['STT', 'LỚP', ...data.events.map(e => e.name), 'THƯỞNG', 'TRỪ', 'TỔNG ĐIỂM', 'XẾP HẠNG'];
     const headerRow = wsSummary.addRow(headerCols);
     headerRow.eachCell(cell => {
       applyDefaultStyles(cell);
@@ -1193,20 +1217,36 @@ export default function App() {
       cell.font = { bold: true, color: { argb: 'FFFF0000' } };
     });
 
-    overallSummary.forEach((s, idx) => {
-      const rowData = [
-        idx + 1,
-        s.className,
-        ...data.events.map(e => s.eventPoints[e.id]),
-        s.bonus_points,
-        s.penalty_points,
-        s.totalPoints,
-        s.overallRank
-      ];
-      const row = wsSummary.addRow(rowData);
-      row.eachCell((cell, colNum) => {
-        applyDefaultStyles(cell);
-        if (colNum === 2) cell.font = { bold: true, color: { argb: 'FF0000FF' } };
+    const grades = Array.from(new Set(data.classes.map(c => c.grade))).sort();
+    let currentSummaryRow = 4;
+
+    grades.forEach(grade => {
+      // Add Grade Header
+      const gradeRow = wsSummary.addRow([`KHỐI ${grade}`]);
+      wsSummary.mergeCells(currentSummaryRow, 1, currentSummaryRow, headerCols.length);
+      gradeRow.getCell(1).font = { bold: true, color: { argb: 'FF0000FF' }, size: 12 };
+      gradeRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+      gradeRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE9F5FF' } };
+      gradeRow.getCell(1).border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+      currentSummaryRow++;
+
+      const gradeSummary = overallSummary.filter(s => s.grade === grade);
+      gradeSummary.forEach((s, idx) => {
+        const rowData = [
+          idx + 1,
+          s.className,
+          ...data.events.map(e => s.eventPoints[e.id]),
+          s.bonus_points,
+          s.penalty_points,
+          s.totalPoints,
+          s.overallRank
+        ];
+        const row = wsSummary.addRow(rowData);
+        row.eachCell((cell, colNum) => {
+          applyDefaultStyles(cell);
+          if (colNum === 2) cell.font = { bold: true, color: { argb: 'FF0000FF' } };
+        });
+        currentSummaryRow++;
       });
     });
 
@@ -1215,9 +1255,11 @@ export default function App() {
       const { event, results } = er;
       const ws = workbook.addWorksheet(event.name.substring(0, 30));
       
+      const effectiveRoundCount = event.round_count || 1;
+      
       // Title
       const eTitle = ws.addRow([`NỘI DUNG THI ${event.name.toUpperCase()} (${data.competition.name.toUpperCase()})`]);
-      let maxCols = 2 + (data.judges.length * (event.type === 'discipline' ? event.round_count : (event.type === 'hygiene' ? 2 : 1))) + 3;
+      let maxCols = 2 + (data.judges.length * (event.type === 'hygiene' ? 2 : effectiveRoundCount)) + 3;
 
       ws.mergeCells(1, 1, 1, maxCols);
       eTitle.getCell(1).font = { bold: true, color: { argb: 'FFFF0000' }, size: 16 };
@@ -1228,16 +1270,15 @@ export default function App() {
       let h1: string[] = ['STT', 'LỚP'];
       let h2: string[] = ['', ''];
       
-      if (event.type === 'normal') {
-        h1.push('ĐIỂM CHẤM', ...Array(data.judges.length - 1).fill(''));
-        data.judges.forEach((_, i) => h2.push(`GK${i + 1}`));
-      } else if (event.type === 'hygiene') {
+      if (event.type === 'hygiene') {
         h1.push('ĐỔ RÁC', ...Array(data.judges.length - 1).fill(''), 'VSATTP', ...Array(data.judges.length - 1).fill(''));
         data.judges.forEach((_, i) => h2.push(`GK${i + 1}`));
         data.judges.forEach((_, i) => h2.push(`GK${i + 1}`));
-      } else if (event.type === 'discipline') {
-        for (let r = 1; r <= event.round_count; r++) {
-          h1.push(`ĐIỂM CHẤM LẦN ${r}`, ...Array(data.judges.length - 1).fill(''));
+      } else {
+        for (let r = 1; r <= effectiveRoundCount; r++) {
+          const customName = event.round_names?.[r-1];
+          const roundLabel = customName || (effectiveRoundCount > 1 ? `ĐIỂM CHẤM LẦN ${r}` : 'ĐIỂM CHẤM');
+          h1.push(roundLabel, ...Array(data.judges.length - 1).fill(''));
           data.judges.forEach((_, i) => h2.push(`GK${i + 1}`));
         }
       }
@@ -1252,15 +1293,12 @@ export default function App() {
       ws.mergeCells(3, 2, 4, 2); // LỚP
       
       let colIdx = 3;
-      if (event.type === 'normal') {
-        ws.mergeCells(3, colIdx, 3, colIdx + data.judges.length - 1);
-        colIdx += data.judges.length;
-      } else if (event.type === 'hygiene') {
+      if (event.type === 'hygiene') {
         ws.mergeCells(3, colIdx, 3, colIdx + data.judges.length - 1);
         ws.mergeCells(3, colIdx + data.judges.length, 3, colIdx + (2 * data.judges.length) - 1);
         colIdx += 2 * data.judges.length;
-      } else if (event.type === 'discipline') {
-        for (let r = 1; r <= event.round_count; r++) {
+      } else {
+        for (let r = 1; r <= effectiveRoundCount; r++) {
           ws.mergeCells(3, colIdx, 3, colIdx + data.judges.length - 1);
           colIdx += data.judges.length;
         }
@@ -1278,29 +1316,31 @@ export default function App() {
       });
 
       // Data grouped by grade
-      const grades = Array.from(new Set(data.classes.map(c => c.grade))).sort();
+      const eventGrades = Array.from(new Set(data.classes.map(c => c.grade))).sort();
       let curRow = 5;
 
-      grades.forEach(grade => {
+      eventGrades.forEach(grade => {
         const gRow = ws.addRow([`KHỐI ${grade}`]);
         ws.mergeCells(curRow, 1, curRow, maxCols);
         gRow.getCell(1).font = { bold: true, color: { argb: 'FF0000FF' }, size: 12 };
         gRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
         gRow.getCell(1).border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+        gRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE9F5FF' } };
         curRow++;
 
         const gRes = results.filter(r => r.grade === grade).sort((a, b) => a.rank - b.rank);
         gRes.forEach((r, idx) => {
           const rowData: any[] = [idx + 1, r.className];
           
-          if (event.type === 'normal') {
-            data.judges.forEach(j => rowData.push(r.judgeScores[`${j.id}_1_`] || 0));
-          } else if (event.type === 'hygiene') {
+          if (event.type === 'hygiene') {
             data.judges.forEach(j => rowData.push(r.judgeScores[`${j.id}_1_do_rac`] || 0));
             data.judges.forEach(j => rowData.push(r.judgeScores[`${j.id}_1_vsattp`] || 0));
-          } else if (event.type === 'discipline') {
-            for (let rd = 1; rd <= event.round_count; rd++) {
-              data.judges.forEach(j => rowData.push(r.judgeScores[`${j.id}_${rd}_`] || 0));
+          } else {
+            for (let rd = 1; rd <= effectiveRoundCount; rd++) {
+              data.judges.forEach(j => {
+                const score = r.judgeScores[`${j.id}_${rd}_`] || r.judgeScores[`${j.id}_${rd}_none`] || 0;
+                rowData.push(score);
+              });
             }
           }
           rowData.push(r.totalScore, r.rank, r.convertedPoints);
@@ -1311,22 +1351,17 @@ export default function App() {
             if (colNum === 2) cell.font = { bold: true, color: { argb: 'FF0000FF' } };
             
             // Color judge score columns
-            if (event.type === 'normal') {
-              if (colNum >= 3 && colNum < 3 + data.judges.length) {
-                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
-                cell.font = { color: { argb: 'FFFF0000' } };
-              }
-            } else if (event.type === 'hygiene') {
+            if (event.type === 'hygiene') {
               if (colNum >= 3 && colNum < 3 + (2 * data.judges.length)) {
                 const isVsat = colNum >= 3 + data.judges.length;
                 cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isVsat ? 'FF92D050' : 'FFFFFF00' } };
                 cell.font = { color: { argb: 'FFFF0000' } };
               }
-            } else if (event.type === 'discipline') {
+            } else {
               const roundIdx = Math.floor((colNum - 3) / data.judges.length);
-              if (colNum >= 3 && colNum < 3 + (event.round_count * data.judges.length)) {
-                const colors = ['FFFFFF00', 'FF92D050', 'FF9BC2E6'];
-                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors[roundIdx % 3] } };
+              if (colNum >= 3 && colNum < 3 + (effectiveRoundCount * data.judges.length)) {
+                const colors = ['FFFFFF00', 'FF92D050', 'FF9BC2E6', 'FFD9E1F2', 'FFF2F2F2'];
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors[roundIdx % colors.length] } };
                 cell.font = { color: { argb: 'FFFF0000' } };
               }
             }
@@ -2147,10 +2182,62 @@ export default function App() {
               {showAddJudge && (
                 <Card className="p-6">
                   <h2 className="text-xl font-bold mb-4">{editingJudge ? 'Sửa giám khảo' : 'Thêm giám khảo mới'}</h2>
-                <div className="flex flex-col sm:flex-row gap-4 items-end">
-                    <Input label="Tên giám khảo" value={newJudgeName} onChange={setNewJudgeName} placeholder="VD: Nguyễn Văn A" />
-                    <Input label="Mã đăng nhập" value={newJudgeCode} onChange={setNewJudgeCode} placeholder="VD: GK01" />
-                    <Button className="col-span-2" onClick={handleAddJudge}><Save size={18} /> {editingJudge ? 'Cập nhật' : 'Thêm'}</Button>
+                  <div className="space-y-6">
+                    <div className="flex flex-col sm:flex-row gap-4">
+                      <Input label="Tên giám khảo" value={newJudgeName} onChange={setNewJudgeName} placeholder="VD: Nguyễn Văn A" className="flex-1" />
+                      <Input label="Mã đăng nhập" value={newJudgeCode} onChange={setNewJudgeCode} placeholder="VD: GK01" className="flex-1" />
+                    </div>
+
+                    <div className="space-y-3">
+                      <label className="text-xs font-semibold uppercase tracking-wider text-black/50 ml-1">Phân công chấm nội dung</label>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                        {data.events.map(event => (
+                          <label key={event.id} className="flex items-center gap-2 p-3 bg-black/5 rounded-xl cursor-pointer hover:bg-black/10 transition-colors">
+                            <input 
+                              type="checkbox" 
+                              checked={newJudgeAssignedEvents.includes(event.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setNewJudgeAssignedEvents([...newJudgeAssignedEvents, event.id]);
+                                } else {
+                                  setNewJudgeAssignedEvents(newJudgeAssignedEvents.filter(id => id !== event.id));
+                                }
+                              }}
+                              className="w-4 h-4 rounded border-black/10 text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <span className="text-sm font-medium truncate">{event.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 p-4 bg-amber-50 rounded-2xl border border-amber-100">
+                      <input 
+                        id="is_bonus_penalty"
+                        type="checkbox" 
+                        checked={newJudgeIsBonusPenalty}
+                        onChange={(e) => setNewJudgeIsBonusPenalty(e.target.checked)}
+                        className="w-5 h-5 rounded border-amber-200 text-amber-600 focus:ring-amber-500"
+                      />
+                      <label htmlFor="is_bonus_penalty" className="flex-1 cursor-pointer">
+                        <p className="font-bold text-amber-900">Giám khảo chấm thưởng/phạt</p>
+                        <p className="text-xs text-amber-700/60">Giám khảo này sẽ chấm điểm thưởng và điểm trừ trực tiếp vào điểm tổng kết của lớp.</p>
+                      </label>
+                    </div>
+
+                    <div className="flex gap-3">
+                      <Button className="flex-1 h-12" onClick={handleAddJudge}><Save size={18} /> {editingJudge ? 'Cập nhật' : 'Thêm giám khảo'}</Button>
+                      {editingJudge && (
+                        <Button variant="outline" className="h-12" onClick={() => {
+                          setEditingJudge(null);
+                          setNewJudgeName('');
+                          setNewJudgeCode('');
+                          setNewJudgeAssignedEvents([]);
+                          setNewJudgeIsBonusPenalty(false);
+                          setShowAddJudge(false);
+                        }}>Hủy</Button>
+                      )}
+                    </div>
                   </div>
                 </Card>
               )}
@@ -2174,6 +2261,17 @@ export default function App() {
                                   <div>
                                     <p className="font-bold">{j.name}</p>
                                     <p className="text-[10px] font-bold text-black/30">MÃ: {j.code}</p>
+                                    <div className="flex flex-wrap gap-1 mt-1">
+                                      {j.is_bonus_penalty_judge && (
+                                        <span className="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold uppercase tracking-tighter">Thưởng/Phạt</span>
+                                      )}
+                                      {j.assigned_event_ids?.map(id => {
+                                        const event = data.events.find(e => e.id === id);
+                                        return event ? (
+                                          <span key={id} className="text-[9px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-medium">{event.name}</span>
+                                        ) : null;
+                                      })}
+                                    </div>
                                   </div>
                                 </div>
                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -2182,7 +2280,10 @@ export default function App() {
                                       setEditingJudge(j);
                                       setNewJudgeName(j.name);
                                       setNewJudgeCode(j.code || '');
+                                      setNewJudgeAssignedEvents(j.assigned_event_ids || []);
+                                      setNewJudgeIsBonusPenalty(!!j.is_bonus_penalty_judge);
                                       setShowAddJudge(true);
+                                      window.scrollTo({ top: 0, behavior: 'smooth' });
                                     }}
                                     className="p-2 hover:bg-black/5 rounded-lg text-black/40 hover:text-black transition-colors"
                                   >
@@ -2246,7 +2347,18 @@ export default function App() {
                     className="w-full px-4 py-3 bg-white border border-black/5 rounded-2xl focus:ring-2 focus:ring-black/10 outline-none font-medium"
                   >
                     <option value="">-- Chọn nội dung --</option>
-                    {data.events.map(e => <option key={e.id} value={e.id}>{e.name} {e.is_locked ? '🔒' : ''}</option>)}
+                    {data.events
+                      .filter(e => {
+                        if (userRole === 'admin') return true;
+                        if (!loggedInJudge) return false;
+                        return loggedInJudge.assigned_event_ids?.includes(e.id);
+                      })
+                      .map(e => <option key={e.id} value={e.id}>{e.name} {e.is_locked ? '🔒' : ''}</option>)
+                    }
+                    {((userRole === 'admin' && selectedJudgeId && data.judges.find(j => j.id === selectedJudgeId)?.is_bonus_penalty_judge) || 
+                      (userRole === 'judge' && loggedInJudge?.is_bonus_penalty_judge)) && (
+                      <option value="bonus_penalty">⭐ CHẤM THƯỞNG / PHẠT (TỔNG KẾT)</option>
+                    )}
                   </select>
                 </div>
                 {userRole === 'admin' && (
@@ -2270,17 +2382,24 @@ export default function App() {
                     <thead>
                       <tr className="bg-black/5">
                         <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider">Lớp</th>
-                        {Array.from({ length: data.events.find(e => e.id === selectedEventId)?.round_count || 1 }).map((_, i) => {
-                          const event = data.events.find(e => e.id === selectedEventId);
-                          const customName = event?.round_names?.[i];
-                          return (
-                            <th key={i} className="px-6 py-4 font-bold text-sm uppercase tracking-wider text-center">
-                              {customName || ((event?.round_count || 1) > 1 ? `Lần ${i + 1}` : 'Điểm số')}
-                            </th>
-                          );
-                        })}
-                        <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider text-center text-emerald-600">Thưởng</th>
-                        <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider text-center text-rose-600">Trừ</th>
+                        {selectedEventId === 'bonus_penalty' ? (
+                          <>
+                            <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider text-center text-emerald-600">Điểm Thưởng</th>
+                            <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider text-center text-rose-600">Điểm Trừ</th>
+                          </>
+                        ) : (
+                          <>
+                            {Array.from({ length: data.events.find(e => e.id === selectedEventId)?.round_count || 1 }).map((_, i) => {
+                              const event = data.events.find(e => e.id === selectedEventId);
+                              const customName = event?.round_names?.[i];
+                              return (
+                                <th key={i} className="px-6 py-4 font-bold text-sm uppercase tracking-wider text-center">
+                                  {customName || ((event?.round_count || 1) > 1 ? `Lần ${i + 1}` : 'Điểm số')}
+                                </th>
+                              );
+                            })}
+                          </>
+                        )}
                       </tr>
                     </thead>
                     <tbody>
@@ -2292,41 +2411,46 @@ export default function App() {
                             </td>
                           </tr>
                           {classes.map(cls => {
-                            const event = data.events.find(e => e.id === selectedEventId)!;
+                            const event = data.events.find(e => e.id === selectedEventId);
                             const judgeId = userRole === 'judge' ? loggedInJudge?.id : selectedJudgeId;
-
+ 
                             if (!judgeId) return null;
-
+ 
                             return (
                               <tr key={cls.id} className="border-t border-black/5 hover:bg-black/[0.02] transition-colors">
                                 <td className="px-6 py-4">
                                   <p className="font-bold">{cls.name}</p>
                                 </td>
-                                {Array.from({ length: event.round_count || 1 }).map((_, i) => (
-                                  <td key={i} className="px-6 py-4 text-center">
-                                    <ScoreInput 
-                                      value={pendingScores[`${cls.id}-${i + 1}-none`] || 0}
-                                      onChange={(val) => handleSaveScore(cls.id, selectedEventId, judgeId, i + 1, val)}
-                                      disabled={event.is_locked}
-                                    />
-                                  </td>
-                                ))}
-                                <td className="px-6 py-4 text-center">
-                                  <ScoreInput 
-                                    value={pendingScores[`${cls.id}-1-bonus`] || 0}
-                                    onChange={(val) => handleSaveScore(cls.id, selectedEventId, judgeId, 1, val, 'bonus')}
-                                    disabled={event.is_locked}
-                                    className="text-emerald-600"
-                                  />
-                                </td>
-                                <td className="px-6 py-4 text-center">
-                                  <ScoreInput 
-                                    value={pendingScores[`${cls.id}-1-penalty`] || 0}
-                                    onChange={(val) => handleSaveScore(cls.id, selectedEventId, judgeId, 1, val, 'penalty')}
-                                    disabled={event.is_locked}
-                                    className="text-rose-600"
-                                  />
-                                </td>
+                                {selectedEventId === 'bonus_penalty' ? (
+                                  <>
+                                    <td className="px-6 py-4 text-center">
+                                      <ScoreInput 
+                                        value={pendingScores[`${cls.id}-1-bonus`] || 0}
+                                        onChange={(val) => handleSaveScore(cls.id, 'bonus_penalty', judgeId, 1, val, 'bonus')}
+                                        className="text-emerald-600 font-bold"
+                                      />
+                                    </td>
+                                    <td className="px-6 py-4 text-center">
+                                      <ScoreInput 
+                                        value={pendingScores[`${cls.id}-1-penalty`] || 0}
+                                        onChange={(val) => handleSaveScore(cls.id, 'bonus_penalty', judgeId, 1, val, 'penalty')}
+                                        className="text-rose-600 font-bold"
+                                      />
+                                    </td>
+                                  </>
+                                ) : (
+                                  <>
+                                    {Array.from({ length: event?.round_count || 1 }).map((_, i) => (
+                                      <td key={i} className="px-6 py-4 text-center">
+                                        <ScoreInput 
+                                          value={pendingScores[`${cls.id}-${i + 1}-none`] || 0}
+                                          onChange={(val) => handleSaveScore(cls.id, selectedEventId, judgeId, i + 1, val)}
+                                          disabled={event?.is_locked}
+                                        />
+                                      </td>
+                                    ))}
+                                  </>
+                                )}
                               </tr>
                             );
                           })}
@@ -2337,7 +2461,7 @@ export default function App() {
                   <div className="p-6 bg-black/[0.02] border-t border-black/5 flex justify-end">
                     <Button 
                       onClick={handleBulkSaveScore} 
-                      disabled={isSaving || data.events.find(e => e.id === selectedEventId)?.is_locked}
+                      disabled={isSaving || (selectedEventId !== 'bonus_penalty' && data.events.find(e => e.id === selectedEventId)?.is_locked)}
                       className="min-w-[200px]"
                     >
                       {isSaving ? 'Đang lưu...' : 'Xác nhận chấm điểm'}
