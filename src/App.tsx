@@ -1012,15 +1012,15 @@ export default function App() {
 
       // Rank within scope
       const rankedResults = classResults.map(res => {
-        // If no scores entered for this class (not participated), rank is 0 and points are 0
-        if (!res.hasScores) {
+        // If no scores entered for this class or total score is 0 (not participated/no points), rank is 0 and points are 0
+        if (!res.hasScores || res.totalScore === 0) {
           return { ...res, rank: 0, convertedPoints: 0 };
         }
 
         const scope = event.ranking_scope || 'grade';
         const comparisonGroup = scope === 'school' 
-          ? classResults.filter(r => r.hasScores) 
-          : classResults.filter(r => r.grade === res.grade && r.hasScores);
+          ? classResults.filter(r => r.hasScores && r.totalScore > 0) 
+          : classResults.filter(r => r.grade === res.grade && r.hasScores && r.totalScore > 0);
           
         const sorted = [...comparisonGroup].sort((a, b) => b.totalScore - a.totalScore);
         
@@ -1089,7 +1089,11 @@ export default function App() {
 
     // Rank overall by grade
     const rankedSummary = summary.map(s => {
-      const sameGrade = summary.filter(other => other.grade === s.grade);
+      // If no points and no raw score, they didn't participate or got nothing
+      if (s.totalPoints === 0 && s.totalRawScore === 0) {
+        return { ...s, overallRank: 0 };
+      }
+      const sameGrade = summary.filter(other => other.grade === s.grade && (other.totalPoints > 0 || other.totalRawScore > 0));
       const sorted = [...sameGrade].sort((a, b) => b.totalPoints - a.totalPoints);
       // Handle ties: find first index of this score
       const overallRank = sorted.findIndex(other => other.totalPoints === s.totalPoints) + 1;
@@ -1133,10 +1137,19 @@ export default function App() {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet(event.name.substring(0, 30));
 
+    // Filter judges assigned to THIS event
+    let eventJudges = data.judges.filter(j => j.assigned_event_ids?.includes(event.id));
+    if (event.judge_count) {
+      eventJudges = eventJudges.slice(0, event.judge_count);
+    }
+    if (eventJudges.length === 0) {
+      eventJudges = data.judges.slice(0, event.judge_count || 1);
+    }
+
     // 1. Title
     const titleRow = worksheet.addRow([`NỘI DUNG THI ${event.name.toUpperCase()} (${data.competition.name.toUpperCase()})`]);
     const effectiveRoundCount = event.round_count || 1;
-    let maxCols = 2 + (data.judges.length * effectiveRoundCount) + 3;
+    let maxCols = 2 + (eventJudges.length * effectiveRoundCount) + 3;
     worksheet.mergeCells(1, 1, 1, maxCols);
     titleRow.getCell(1).font = { bold: true, color: { argb: 'FFFF0000' }, size: 16 };
     titleRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
@@ -1149,8 +1162,8 @@ export default function App() {
     for (let r = 1; r <= effectiveRoundCount; r++) {
       const customName = event.round_names?.[r-1];
       const roundLabel = customName || (effectiveRoundCount > 1 ? `ĐIỂM CHẤM LẦN ${r}` : 'ĐIỂM CHẤM');
-      h1.push(roundLabel, ...Array(data.judges.length - 1).fill(''));
-      data.judges.forEach((_, i) => h2.push(`GK${i + 1}`));
+      h1.push(roundLabel, ...Array(eventJudges.length - 1).fill(''));
+      eventJudges.forEach((_, i) => h2.push(`GK${i + 1}`));
     }
     h1.push('TỔNG ĐIỂM', 'XẾP VT', 'TỔNG ĐIỂM');
     h2.push('', '', '');
@@ -1163,8 +1176,8 @@ export default function App() {
     
     let colIdx = 3;
     for (let r = 1; r <= effectiveRoundCount; r++) {
-      worksheet.mergeCells(3, colIdx, 3, colIdx + data.judges.length - 1);
-      colIdx += data.judges.length;
+      worksheet.mergeCells(3, colIdx, 3, colIdx + eventJudges.length - 1);
+      colIdx += eventJudges.length;
     }
     worksheet.mergeCells(3, colIdx, 4, colIdx); // TỔNG ĐIỂM
     worksheet.mergeCells(3, colIdx + 1, 4, colIdx + 1); // XẾP VT
@@ -1199,11 +1212,11 @@ export default function App() {
         const rowData: any[] = [idx + 1, r.className];
         
         for (let rd = 1; rd <= effectiveRoundCount; rd++) {
-          data.judges.forEach(j => {
+          eventJudges.forEach(j => {
             rowData.push(r.judgeScores[`${j.id}_${rd}_`] || r.judgeScores[`${j.id}_${rd}_none`] || 0);
           });
         }
-        rowData.push(r.totalScore, r.rank, r.convertedPoints);
+        rowData.push(r.totalScore, r.rank || '', r.convertedPoints);
 
         const row = worksheet.addRow(rowData);
         row.eachCell((cell, colNum) => {
@@ -1211,8 +1224,8 @@ export default function App() {
           if (colNum === 2) cell.font = { bold: true, color: { argb: 'FF0000FF' } };
           
           // Color judge score columns
-          if (colNum >= 3 && colNum < 3 + (effectiveRoundCount * data.judges.length)) {
-            const roundIdx = Math.floor((colNum - 3) / data.judges.length);
+          if (colNum >= 3 && colNum < 3 + (effectiveRoundCount * eventJudges.length)) {
+            const roundIdx = Math.floor((colNum - 3) / eventJudges.length);
             const colors = ['FFFFFF00', 'FF92D050', 'FF9BC2E6', 'FFD9E1F2', 'FFF2F2F2'];
             cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors[roundIdx % colors.length] } };
             cell.font = { color: { argb: 'FFFF0000' } };
@@ -1277,7 +1290,7 @@ export default function App() {
           s.bonus_points,
           s.penalty_points,
           s.totalPoints,
-          s.overallRank
+          s.overallRank || ''
         ];
         const row = wsSummary.addRow(rowData);
         row.eachCell((cell, colNum) => {
@@ -1294,10 +1307,19 @@ export default function App() {
       const ws = workbook.addWorksheet(event.name.substring(0, 30));
       
       const effectiveRoundCount = event.round_count || 1;
+
+      // Filter judges assigned to THIS event
+      let eventJudges = data.judges.filter(j => j.assigned_event_ids?.includes(event.id));
+      if (event.judge_count) {
+        eventJudges = eventJudges.slice(0, event.judge_count);
+      }
+      if (eventJudges.length === 0) {
+        eventJudges = data.judges.slice(0, event.judge_count || 1);
+      }
       
       // Title
       const eTitle = ws.addRow([`NỘI DUNG THI ${event.name.toUpperCase()} (${data.competition.name.toUpperCase()})`]);
-      let maxCols = 2 + (data.judges.length * (event.type === 'hygiene' ? 2 : effectiveRoundCount)) + 3;
+      let maxCols = 2 + (eventJudges.length * (event.type === 'hygiene' ? 2 : effectiveRoundCount)) + 3;
 
       ws.mergeCells(1, 1, 1, maxCols);
       eTitle.getCell(1).font = { bold: true, color: { argb: 'FFFF0000' }, size: 16 };
@@ -1309,15 +1331,15 @@ export default function App() {
       let h2: string[] = ['', ''];
       
       if (event.type === 'hygiene') {
-        h1.push('ĐỔ RÁC', ...Array(data.judges.length - 1).fill(''), 'VSATTP', ...Array(data.judges.length - 1).fill(''));
-        data.judges.forEach((_, i) => h2.push(`GK${i + 1}`));
-        data.judges.forEach((_, i) => h2.push(`GK${i + 1}`));
+        h1.push('ĐỔ RÁC', ...Array(eventJudges.length - 1).fill(''), 'VSATTP', ...Array(eventJudges.length - 1).fill(''));
+        eventJudges.forEach((_, i) => h2.push(`GK${i + 1}`));
+        eventJudges.forEach((_, i) => h2.push(`GK${i + 1}`));
       } else {
         for (let r = 1; r <= effectiveRoundCount; r++) {
           const customName = event.round_names?.[r-1];
           const roundLabel = customName || (effectiveRoundCount > 1 ? `ĐIỂM CHẤM LẦN ${r}` : 'ĐIỂM CHẤM');
-          h1.push(roundLabel, ...Array(data.judges.length - 1).fill(''));
-          data.judges.forEach((_, i) => h2.push(`GK${i + 1}`));
+          h1.push(roundLabel, ...Array(eventJudges.length - 1).fill(''));
+          eventJudges.forEach((_, i) => h2.push(`GK${i + 1}`));
         }
       }
       h1.push('TỔNG ĐIỂM', 'XẾP VT', 'TỔNG ĐIỂM');
@@ -1332,13 +1354,13 @@ export default function App() {
       
       let colIdx = 3;
       if (event.type === 'hygiene') {
-        ws.mergeCells(3, colIdx, 3, colIdx + data.judges.length - 1);
-        ws.mergeCells(3, colIdx + data.judges.length, 3, colIdx + (2 * data.judges.length) - 1);
-        colIdx += 2 * data.judges.length;
+        ws.mergeCells(3, colIdx, 3, colIdx + eventJudges.length - 1);
+        ws.mergeCells(3, colIdx + eventJudges.length, 3, colIdx + (2 * eventJudges.length) - 1);
+        colIdx += 2 * eventJudges.length;
       } else {
         for (let r = 1; r <= effectiveRoundCount; r++) {
-          ws.mergeCells(3, colIdx, 3, colIdx + data.judges.length - 1);
-          colIdx += data.judges.length;
+          ws.mergeCells(3, colIdx, 3, colIdx + eventJudges.length - 1);
+          colIdx += eventJudges.length;
         }
       }
       ws.mergeCells(3, colIdx, 4, colIdx); // TỔNG ĐIỂM
@@ -1371,17 +1393,17 @@ export default function App() {
           const rowData: any[] = [idx + 1, r.className];
           
           if (event.type === 'hygiene') {
-            data.judges.forEach(j => rowData.push(r.judgeScores[`${j.id}_1_do_rac`] || 0));
-            data.judges.forEach(j => rowData.push(r.judgeScores[`${j.id}_1_vsattp`] || 0));
+            eventJudges.forEach(j => rowData.push(r.judgeScores[`${j.id}_1_do_rac`] || 0));
+            eventJudges.forEach(j => rowData.push(r.judgeScores[`${j.id}_1_vsattp`] || 0));
           } else {
             for (let rd = 1; rd <= effectiveRoundCount; rd++) {
-              data.judges.forEach(j => {
+              eventJudges.forEach(j => {
                 const score = r.judgeScores[`${j.id}_${rd}_`] || r.judgeScores[`${j.id}_${rd}_none`] || 0;
                 rowData.push(score);
               });
             }
           }
-          rowData.push(r.totalScore, r.rank, r.convertedPoints);
+          rowData.push(r.totalScore, r.rank || '', r.convertedPoints);
           
           const dataRow = ws.addRow(rowData);
           dataRow.eachCell((cell, colNum) => {
@@ -1390,14 +1412,14 @@ export default function App() {
             
             // Color judge score columns
             if (event.type === 'hygiene') {
-              if (colNum >= 3 && colNum < 3 + (2 * data.judges.length)) {
-                const isVsat = colNum >= 3 + data.judges.length;
+              if (colNum >= 3 && colNum < 3 + (2 * eventJudges.length)) {
+                const isVsat = colNum >= 3 + eventJudges.length;
                 cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isVsat ? 'FF92D050' : 'FFFFFF00' } };
                 cell.font = { color: { argb: 'FFFF0000' } };
               }
             } else {
-              const roundIdx = Math.floor((colNum - 3) / data.judges.length);
-              if (colNum >= 3 && colNum < 3 + (effectiveRoundCount * data.judges.length)) {
+              const roundIdx = Math.floor((colNum - 3) / eventJudges.length);
+              if (colNum >= 3 && colNum < 3 + (effectiveRoundCount * eventJudges.length)) {
                 const colors = ['FFFFFF00', 'FF92D050', 'FF9BC2E6', 'FFD9E1F2', 'FFF2F2F2'];
                 cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors[roundIdx % colors.length] } };
                 cell.font = { color: { argb: 'FFFF0000' } };
@@ -1871,7 +1893,7 @@ export default function App() {
                                 s.overallRank === 2 ? "bg-slate-100 text-slate-700" : 
                                 s.overallRank === 3 ? "bg-orange-100 text-orange-700" : "bg-black/5 text-black/40"
                               )}>
-                                {s.overallRank}
+                                {s.overallRank || '-'}
                               </div>
                               <div className="flex-1">
                                 <p className="font-bold text-sm">{s.className}</p>
@@ -2703,7 +2725,7 @@ export default function App() {
                                 s.overallRank === 2 ? "bg-slate-100 text-slate-700" : 
                                 s.overallRank === 3 ? "bg-orange-100 text-orange-700" : "bg-black/5 text-black/40"
                               )}>
-                                {s.overallRank}
+                                {s.overallRank || '-'}
                               </div>
                             </td>
                           </tr>
