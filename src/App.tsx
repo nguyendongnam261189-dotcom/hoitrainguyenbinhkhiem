@@ -242,6 +242,7 @@ export default function App() {
   const [pendingScores, setPendingScores] = useState<Record<string, number>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [showNavigationWarning, setShowNavigationWarning] = useState<{ tab?: typeof activeTab; eventId?: string; judgeId?: string } | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -1704,13 +1705,21 @@ export default function App() {
 
   const handleTabChange = (tab: typeof activeTab) => {
     if (isDirty) {
-      if (confirm("Bạn có thay đổi chưa lưu. Bạn có chắc chắn muốn rời đi không?")) {
-        setIsDirty(false);
-        setActiveTab(tab);
-        setIsMobileMenuOpen(false);
-      }
+      setShowNavigationWarning({ tab });
     } else {
       setActiveTab(tab);
+      setIsMobileMenuOpen(false);
+    }
+  };
+
+  const confirmNavigation = () => {
+    if (showNavigationWarning) {
+      const { tab, eventId, judgeId } = showNavigationWarning;
+      setIsDirty(false);
+      if (tab) setActiveTab(tab);
+      if (eventId) setSelectedEventId(eventId);
+      if (judgeId) setSelectedJudgeId(judgeId);
+      setShowNavigationWarning(null);
       setIsMobileMenuOpen(false);
     }
   };
@@ -2338,7 +2347,7 @@ export default function App() {
           )}
 
           {activeTab === 'scoring' && data && (
-            <motion.div key="scoring" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8">
+            <motion.div key="scoring" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
               <div className="flex justify-between items-end">
                 <div>
                   <h1 className="text-3xl font-bold">Chấm điểm</h1>
@@ -2374,9 +2383,7 @@ export default function App() {
                     onChange={(e) => {
                       const val = e.target.value;
                       if (isDirty) {
-                        if (confirm("Bạn có thay đổi chưa lưu. Bạn có chắc chắn muốn chuyển nội dung không?")) {
-                          setSelectedEventId(val);
-                        }
+                        setShowNavigationWarning({ eventId: val });
                       } else {
                         setSelectedEventId(val);
                       }
@@ -2406,9 +2413,7 @@ export default function App() {
                       onChange={(e) => {
                         const val = e.target.value;
                         if (isDirty) {
-                          if (confirm("Bạn có thay đổi chưa lưu. Bạn có chắc chắn muốn chuyển giám khảo không?")) {
-                            setSelectedJudgeId(val);
-                          }
+                          setShowNavigationWarning({ judgeId: val });
                         } else {
                           setSelectedJudgeId(val);
                         }
@@ -2423,11 +2428,36 @@ export default function App() {
               </div>
 
               {selectedEventId && (selectedJudgeId || userRole === 'judge') && (
-                <Card className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse min-w-max">
-                    <thead>
-                      <tr className="bg-black/5">
-                        <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider">Lớp</th>
+                <>
+                  {/* Sticky Action Bar - Frozen like Excel */}
+                  <div className="sticky top-[-16px] md:top-[-32px] z-50 bg-white border-b border-indigo-100 flex justify-between items-center gap-4 p-4 -mx-4 lg:-mx-8 mb-4 shadow-md">
+                    <div className="flex items-center gap-2">
+                      {isDirty ? (
+                        <span className="flex items-center gap-2 text-amber-600 font-bold text-sm animate-pulse">
+                          <AlertCircle size={18} />
+                          Có thay đổi chưa lưu!
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-2 text-emerald-600 font-bold text-sm">
+                          <CheckCircle2 size={18} />
+                          Đã lưu tất cả
+                        </span>
+                      )}
+                    </div>
+                    <Button 
+                      onClick={handleBulkSaveScore} 
+                      disabled={isSaving || !isDirty || (selectedEventId !== 'bonus_penalty' && data.events.find(e => e.id === selectedEventId)?.is_locked)}
+                      className="min-w-[180px] py-2.5 font-bold rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-200"
+                    >
+                      {isSaving ? 'Đang lưu...' : 'Xác nhận chấm điểm'}
+                    </Button>
+                  </div>
+
+                  <Card className="overflow-visible">
+                    <table className="w-full text-left border-collapse min-w-max">
+                      <thead className="sticky top-[60px] md:top-[44px] z-40 bg-slate-50 shadow-sm">
+                        <tr className="bg-black/5">
+                          <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider">Lớp</th>
                         {selectedEventId === 'bonus_penalty' ? (
                           <>
                             <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider text-center text-emerald-600">Điểm Thưởng</th>
@@ -2451,7 +2481,7 @@ export default function App() {
                     <tbody>
                       {(Object.entries(classesByGrade) as [string, Class[]][]).map(([grade, classes]) => (
                         <React.Fragment key={grade}>
-                          <tr className={cn("bg-black/[0.02]", getGradeColor(grade).split(' ')[0])}>
+                          <tr className={cn("bg-black/[0.02] sticky top-[112px] md:top-[96px] z-30", getGradeColor(grade).split(' ')[0])}>
                             <td colSpan={10} className="px-6 py-2">
                               <span className={cn("text-[10px] font-bold uppercase tracking-widest", getGradeColor(grade).split(' ')[2])}>Khối {grade}</span>
                             </td>
@@ -2504,32 +2534,11 @@ export default function App() {
                       ))}
                     </tbody>
                   </table>
-                  <div className="sticky bottom-0 p-4 md:p-6 bg-white/90 backdrop-blur-md border-t border-black/10 flex flex-col md:flex-row justify-between items-center gap-4 z-30 shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.1)] rounded-b-2xl">
-                    <div className="flex items-center gap-2">
-                      {isDirty ? (
-                        <span className="flex items-center gap-2 text-amber-600 font-bold text-sm animate-pulse">
-                          <AlertCircle size={18} />
-                          Có thay đổi chưa lưu!
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-2 text-emerald-600 font-bold text-sm">
-                          <CheckCircle2 size={18} />
-                          Đã lưu tất cả thay đổi
-                        </span>
-                      )}
-                    </div>
-                    <Button 
-                      onClick={handleBulkSaveScore} 
-                      disabled={isSaving || (selectedEventId !== 'bonus_penalty' && data.events.find(e => e.id === selectedEventId)?.is_locked)}
-                      className="w-full md:w-auto min-w-[200px] py-4 text-lg"
-                    >
-                      {isSaving ? 'Đang lưu...' : 'Xác nhận chấm điểm'}
-                    </Button>
-                  </div>
                 </Card>
-              )}
-            </motion.div>
-          )}
+              </>
+            )}
+          </motion.div>
+        )}
 
           {activeTab === 'settings' && data && (
             <motion.div key="settings" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8">
@@ -2878,6 +2887,44 @@ export default function App() {
           )}
         </AnimatePresence>
       </main>
+
+      {/* Navigation Warning Modal */}
+      <AnimatePresence>
+        {showNavigationWarning && (
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-black/5"
+            >
+              <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center mb-6">
+                <AlertCircle className="text-amber-500" size={32} />
+              </div>
+              <h3 className="text-2xl font-bold text-indigo-950 mb-3">Thay đổi chưa lưu!</h3>
+              <p className="text-indigo-600/70 mb-8 leading-relaxed">
+                Bạn có một số điểm số chưa được lưu. Nếu rời đi bây giờ, các thay đổi này sẽ bị mất. Bạn có chắc chắn muốn tiếp tục không?
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Button 
+                  variant="outline" 
+                  className="flex-1 py-4 rounded-xl font-bold border-indigo-100 text-indigo-600"
+                  onClick={() => setShowNavigationWarning(null)}
+                >
+                  Ở lại để lưu
+                </Button>
+                <Button 
+                  variant="danger" 
+                  className="flex-1 py-4 rounded-xl font-bold"
+                  onClick={confirmNavigation}
+                >
+                  Tiếp tục rời đi
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
