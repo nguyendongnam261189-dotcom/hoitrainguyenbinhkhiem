@@ -217,6 +217,7 @@ export default function App() {
   const [newEventType, setNewEventType] = useState<'normal' | 'discipline' | 'hygiene'>('normal');
   const [newEventWeight, setNewEventWeight] = useState(1);
   const [newEventRounds, setNewEventRounds] = useState(1);
+  const [newEventJudgeCount, setNewEventJudgeCount] = useState(1);
   const [newEventRoundNames, setNewEventRoundNames] = useState<string[]>([]);
   const [newEventRankingScope, setNewEventRankingScope] = useState<'grade' | 'school'>('grade');
 
@@ -365,7 +366,8 @@ export default function App() {
       round_count: newEventRounds, 
       weight: newEventWeight,
       round_names: newEventRoundNames.slice(0, newEventRounds),
-      ranking_scope: newEventRankingScope
+      ranking_scope: newEventRankingScope,
+      judge_count: newEventJudgeCount
     };
 
     if (editingEvent) {
@@ -663,6 +665,18 @@ export default function App() {
     const grades = Array.from(new Set(data.classes.map(c => c.grade))).sort();
 
     for (const event of data.events) {
+      // Filter judges assigned to THIS event
+      let eventJudges = judgeId 
+        ? data.judges.filter(j => j.id === judgeId)
+        : data.judges.filter(j => j.assigned_event_ids?.includes(event.id));
+      
+      // If judge_count is set, limit the number of judges in the template
+      if (!judgeId && event.judge_count) {
+        eventJudges = eventJudges.slice(0, event.judge_count);
+      }
+
+      if (eventJudges.length === 0) continue;
+
       const sheetName = event.name.replace(/[\\\/\?\*\[\]]/g, '').substring(0, 30);
       const ws = workbook.addWorksheet(sheetName);
 
@@ -679,7 +693,7 @@ export default function App() {
 
       let metaColIdx = 4;
       for (let r = 1; r <= effectiveRoundCount; r++) {
-        judgesToExport.forEach(j => {
+        eventJudges.forEach(j => {
           judgeIdRow.getCell(metaColIdx).value = j.id;
           roundNumRow.getCell(metaColIdx).value = r;
           metaColIdx++;
@@ -688,12 +702,12 @@ export default function App() {
 
       // 2. Title (Visible rows 4-5)
       const titleRow = ws.addRow(['', '', '', `NỘI DUNG THI ${event.name.toUpperCase()}`]);
-      ws.mergeCells(titleRow.number, 4, titleRow.number, 4 + (judgesToExport.length * effectiveRoundCount) - 1);
+      ws.mergeCells(titleRow.number, 4, titleRow.number, 4 + (eventJudges.length * effectiveRoundCount) - 1);
       titleRow.getCell(4).font = { bold: true, color: { argb: 'FFFF0000' }, size: 16 };
       titleRow.getCell(4).alignment = { horizontal: 'center' };
 
       const compRow = ws.addRow(['', '', '', `Hội thi: ${data.competition.name}`]);
-      ws.mergeCells(compRow.number, 4, compRow.number, 4 + (judgesToExport.length * effectiveRoundCount) - 1);
+      ws.mergeCells(compRow.number, 4, compRow.number, 4 + (eventJudges.length * effectiveRoundCount) - 1);
       compRow.getCell(4).alignment = { horizontal: 'center' };
 
       // 3. Headers (Rows 6-7)
@@ -703,8 +717,8 @@ export default function App() {
       for (let r = 1; r <= effectiveRoundCount; r++) {
         const customName = event.round_names?.[r-1];
         const roundLabel = customName || (effectiveRoundCount > 1 ? `LẦN ${r}` : 'ĐIỂM CHẤM');
-        h1.push(roundLabel, ...Array(judgesToExport.length - 1).fill(''));
-        judgesToExport.forEach((_, i) => h2.push(`GK${i + 1}`));
+        h1.push(roundLabel, ...Array(eventJudges.length - 1).fill(''));
+        eventJudges.forEach((_, i) => h2.push(`GK${i + 1}`));
       }
 
       const headerRow = ws.addRow(h1);
@@ -726,14 +740,14 @@ export default function App() {
       
       let headerColIdx = 4;
       for (let r = 1; r <= effectiveRoundCount; r++) {
-        ws.mergeCells(headerRow.number, headerColIdx, headerRow.number, headerColIdx + judgesToExport.length - 1);
-        headerColIdx += judgesToExport.length;
+        ws.mergeCells(headerRow.number, headerColIdx, headerRow.number, headerColIdx + eventJudges.length - 1);
+        headerColIdx += eventJudges.length;
       }
 
       // 4. Data grouped by grade
       grades.forEach(grade => {
         const gradeRow = ws.addRow(['', '', `KHỐI ${grade}`]);
-        ws.mergeCells(gradeRow.number, 3, gradeRow.number, 4 + (judgesToExport.length * effectiveRoundCount) - 1);
+        ws.mergeCells(gradeRow.number, 3, gradeRow.number, 4 + (eventJudges.length * effectiveRoundCount) - 1);
         gradeRow.getCell(3).font = { bold: true, color: { argb: 'FF0000FF' } };
         gradeRow.getCell(3).alignment = { horizontal: 'right' };
         gradeRow.getCell(3).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE9F5FF' } };
@@ -742,7 +756,7 @@ export default function App() {
         gradeClasses.forEach((cls, idx) => {
           const rowData = [cls.id, idx + 1, cls.name];
           for (let r = 1; r <= effectiveRoundCount; r++) {
-            judgesToExport.forEach(j => {
+            eventJudges.forEach(j => {
               const score = data.scores.find(s => s.class_id === cls.id && s.event_id === event.id && s.judge_id === j.id && s.round === r);
               rowData.push(score ? score.score : '');
             });
@@ -765,7 +779,7 @@ export default function App() {
       ws.getColumn(1).width = 5;
       ws.getColumn(2).width = 5;
       ws.getColumn(3).width = 15;
-      for (let i = 4; i < 4 + (judgesToExport.length * effectiveRoundCount); i++) {
+      for (let i = 4; i < 4 + (eventJudges.length * effectiveRoundCount); i++) {
         ws.getColumn(i).width = 8;
       }
     }
@@ -1725,9 +1739,9 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-indigo-50/20 flex flex-col lg:flex-row font-sans text-indigo-950">
+    <div className="h-screen max-h-screen bg-indigo-50/20 flex flex-col lg:flex-row font-sans text-indigo-950 overflow-hidden">
       {/* Mobile Header */}
-      <header className="lg:hidden bg-white border-b border-indigo-100 p-4 sticky top-0 z-50 flex items-center justify-between">
+      <header className="lg:hidden bg-white border-b border-indigo-100 p-4 sticky top-0 z-[100] flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200">
             <Trophy className="text-white" size={20} />
@@ -1795,10 +1809,10 @@ export default function App() {
       )}
 
       {/* Main Content */}
-      <main className="flex-1 p-4 lg:p-8 overflow-auto">
+      <main className="flex-1 overflow-hidden flex flex-col">
         <AnimatePresence mode="wait">
           {activeTab === 'dashboard' && (
-            <motion.div key="dashboard" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8">
+            <motion.div key="dashboard" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="flex-1 overflow-auto p-4 lg:p-8 space-y-8">
               <div className="flex justify-between items-end">
                 <div>
                   <h1 className="text-3xl font-bold">Tổng quan</h1>
@@ -1896,7 +1910,7 @@ export default function App() {
           )}
 
           {activeTab === 'events' && data && (
-            <motion.div key="events" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8">
+            <motion.div key="events" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="flex-1 overflow-auto p-4 lg:p-8 space-y-8">
               <div className="flex justify-between items-end">
                 <div>
                   <h1 className="text-3xl font-bold">Nội dung thi</h1>
@@ -1910,6 +1924,7 @@ export default function App() {
                       setEditingEvent(null);
                       setNewEventName('');
                       setNewEventRounds(1);
+                      setNewEventJudgeCount(1);
                       setNewEventRoundNames([]);
                     }
                     setShowAddEvent(!showAddEvent);
@@ -1930,6 +1945,7 @@ export default function App() {
                       while (names.length < rounds) names.push('');
                       setNewEventRoundNames(names);
                     }} />
+                    <Input label="Số GK chấm" type="number" value={newEventJudgeCount} onChange={(val) => setNewEventJudgeCount(parseInt(val.toString()) || 1)} />
                     <div className="flex flex-col gap-1.5 flex-1">
                       <label className="text-xs font-semibold uppercase tracking-wider text-black/50 ml-1">Phạm vi xếp giải</label>
                       <select 
@@ -2005,7 +2021,8 @@ export default function App() {
                                     <h3 className="font-bold text-lg leading-tight">{event.name}</h3>
                                     <div className="flex gap-2 mt-1">
                                       <span className="text-[10px] font-bold uppercase tracking-wider text-black/40">Hệ số: {event.weight}</span>
-                                      <span className="text-[10px] font-bold uppercase tracking-wider text-black/40">Số lần chấm: {event.round_count}</span>
+                                      <span className="text-[10px] font-bold uppercase tracking-wider text-black/40">Số lần: {event.round_count}</span>
+                                      <span className="text-[10px] font-bold uppercase tracking-wider text-black/40">Số GK: {event.judge_count || 1}</span>
                                     </div>
                                     {event.round_names && event.round_names.length > 0 && (
                                       <div className="flex flex-wrap gap-1 mt-1">
@@ -2023,6 +2040,7 @@ export default function App() {
                                       setNewEventName(event.name);
                                       setNewEventWeight(event.weight);
                                       setNewEventRounds(event.round_count);
+                                      setNewEventJudgeCount(event.judge_count || 1);
                                       setNewEventRoundNames(event.round_names || []);
                                       setNewEventRankingScope(event.ranking_scope || 'grade');
                                       setShowAddEvent(true);
@@ -2065,7 +2083,7 @@ export default function App() {
           )}
 
           {activeTab === 'classes' && data && (
-            <motion.div key="classes" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8">
+            <motion.div key="classes" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="flex-1 overflow-auto p-4 lg:p-8 space-y-8">
               <div className="flex justify-between items-end">
                 <div>
                   <h1 className="text-3xl font-bold">Danh sách lớp</h1>
@@ -2198,7 +2216,7 @@ export default function App() {
           )}
 
           {activeTab === 'judges' && data && (
-            <motion.div key="judges" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8">
+            <motion.div key="judges" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="flex-1 overflow-auto p-4 lg:p-8 space-y-8">
               <div className="flex justify-between items-end">
                 <div>
                   <h1 className="text-3xl font-bold">Giám khảo</h1>
@@ -2347,119 +2365,136 @@ export default function App() {
           )}
 
           {activeTab === 'scoring' && data && (
-            <motion.div key="scoring" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
-              <div className="flex justify-between items-end">
-                <div>
-                  <h1 className="text-3xl font-bold">Chấm điểm</h1>
-                  <p className="text-black/40">Nhập điểm cho từng nội dung</p>
-                  {userRole === 'judge' && loggedInJudge && (
-                    <p className="mt-2 font-bold text-emerald-600">Giám khảo: {loggedInJudge.name}</p>
-                  )}
-                </div>
-                <div className="flex gap-3">
-                  <Button variant="outline" onClick={exportScoringTemplate} className="border-indigo-100 text-indigo-600">
-                    <Download size={18} /> {userRole === 'admin' && !selectedJudgeId ? 'Xuất mẫu tất cả GK' : 'Xuất mẫu Excel'}
-                  </Button>
-                  <div className="relative">
-                    <input 
-                      type="file" 
-                      accept=".xlsx, .xls" 
-                      onChange={handleImportExcel} 
-                      className="absolute inset-0 opacity-0 cursor-pointer" 
-                      disabled={isImporting}
-                    />
-                    <Button variant="secondary" disabled={isImporting}>
-                      {isImporting ? "Đang xử lý..." : <><Upload size={18} /> Nhập từ Excel</>}
+            <motion.div key="scoring" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col overflow-hidden">
+              <div className="p-4 lg:p-8 space-y-8 flex-none">
+                <div className="flex justify-between items-end">
+                  <div>
+                    <h1 className="text-3xl font-bold">Chấm điểm</h1>
+                    <p className="text-black/40">Nhập điểm cho từng nội dung</p>
+                    {userRole === 'judge' && loggedInJudge && (
+                      <p className="mt-2 font-bold text-emerald-600">Giám khảo: {loggedInJudge.name}</p>
+                    )}
+                  </div>
+                  <div className="flex gap-3">
+                    <Button variant="outline" onClick={exportScoringTemplate} className="border-indigo-100 text-indigo-600">
+                      <Download size={18} /> {userRole === 'admin' && !selectedJudgeId ? 'Xuất mẫu tất cả GK' : 'Xuất mẫu Excel'}
                     </Button>
+                    <div className="relative">
+                      <input 
+                        type="file" 
+                        accept=".xlsx, .xls" 
+                        onChange={handleImportExcel} 
+                        className="absolute inset-0 opacity-0 cursor-pointer" 
+                        disabled={isImporting}
+                      />
+                      <Button variant="secondary" disabled={isImporting}>
+                        {isImporting ? "Đang xử lý..." : <><Upload size={18} /> Nhập từ Excel</>}
+                      </Button>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="flex flex-col sm:flex-row gap-4">
-                <div className="flex-1 space-y-2">
-                  <label className="text-xs font-bold uppercase text-black/40 ml-1">Chọn nội dung thi</label>
-                  <select 
-                    value={selectedEventId || ''} 
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (isDirty) {
-                        setShowNavigationWarning({ eventId: val });
-                      } else {
-                        setSelectedEventId(val);
-                      }
-                    }}
-                    className="w-full px-4 py-3 bg-white border border-black/5 rounded-2xl focus:ring-2 focus:ring-black/10 outline-none font-medium"
-                  >
-                    <option value="">-- Chọn nội dung --</option>
-                    {data.events
-                      .filter(e => {
-                        if (userRole === 'admin') return true;
-                        if (!loggedInJudge) return false;
-                        return loggedInJudge.assigned_event_ids?.includes(e.id);
-                      })
-                      .map(e => <option key={e.id} value={e.id}>{e.name} {e.is_locked ? '🔒' : ''}</option>)
-                    }
-                    {((userRole === 'admin' && selectedJudgeId && data.judges.find(j => j.id === selectedJudgeId)?.is_bonus_penalty_judge) || 
-                      (userRole === 'judge' && loggedInJudge?.is_bonus_penalty_judge)) && (
-                      <option value="bonus_penalty">⭐ CHẤM THƯỞNG / PHẠT (TỔNG KẾT)</option>
-                    )}
-                  </select>
-                </div>
-                {userRole === 'admin' && (
+                <div className="flex flex-col sm:flex-row gap-4">
                   <div className="flex-1 space-y-2">
-                    <label className="text-xs font-bold uppercase text-black/40 ml-1">Chấm với tư cách GK</label>
+                    <label className="text-xs font-bold uppercase text-black/40 ml-1">Chọn nội dung thi</label>
                     <select 
-                      value={selectedJudgeId || ''} 
+                      value={selectedEventId || ''} 
                       onChange={(e) => {
                         const val = e.target.value;
                         if (isDirty) {
-                          setShowNavigationWarning({ judgeId: val });
+                          setShowNavigationWarning({ eventId: val });
                         } else {
-                          setSelectedJudgeId(val);
+                          setSelectedEventId(val);
                         }
                       }}
                       className="w-full px-4 py-3 bg-white border border-black/5 rounded-2xl focus:ring-2 focus:ring-black/10 outline-none font-medium"
                     >
-                      <option value="">-- Chọn giám khảo --</option>
-                      {data.judges.map(j => <option key={j.id} value={j.id}>{j.name}</option>)}
+                      <option value="">-- Chọn nội dung --</option>
+                      {data.events
+                        .filter(e => {
+                          if (userRole === 'admin') {
+                            // If a judge is selected, only show events assigned to them
+                            if (selectedJudgeId) {
+                              const judge = data.judges.find(j => j.id === selectedJudgeId);
+                              return judge?.assigned_event_ids?.includes(e.id);
+                            }
+                            return true;
+                          }
+                          if (!loggedInJudge) return false;
+                          return loggedInJudge.assigned_event_ids?.includes(e.id);
+                        })
+                        .map(e => <option key={e.id} value={e.id}>{e.name} {e.is_locked ? '🔒' : ''}</option>)
+                      }
+                      {((userRole === 'admin' && selectedJudgeId && data.judges.find(j => j.id === selectedJudgeId)?.is_bonus_penalty_judge) || 
+                        (userRole === 'judge' && loggedInJudge?.is_bonus_penalty_judge)) && (
+                        <option value="bonus_penalty">⭐ CHẤM THƯỞNG / PHẠT (TỔNG KẾT)</option>
+                      )}
                     </select>
                   </div>
-                )}
+                  {userRole === 'admin' && (
+                    <div className="flex-1 space-y-2">
+                      <label className="text-xs font-bold uppercase text-black/40 ml-1">Chấm với tư cách GK</label>
+                      <select 
+                        value={selectedJudgeId || ''} 
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (isDirty) {
+                            setShowNavigationWarning({ judgeId: val });
+                          } else {
+                            setSelectedJudgeId(val);
+                          }
+                        }}
+                        className="w-full px-4 py-3 bg-white border border-black/5 rounded-2xl focus:ring-2 focus:ring-black/10 outline-none font-medium"
+                      >
+                        <option value="">-- Chọn giám khảo --</option>
+                        {data.judges
+                          .filter(j => {
+                            if (!selectedEventId) return true;
+                            if (selectedEventId === 'bonus_penalty') return j.is_bonus_penalty_judge;
+                            return j.assigned_event_ids?.includes(selectedEventId);
+                          })
+                          .map(j => <option key={j.id} value={j.id}>{j.name}</option>)
+                        }
+                      </select>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {selectedEventId && (selectedJudgeId || userRole === 'judge') && (
-                <>
-                  {/* Sticky Action Bar - Frozen like Excel */}
-                  <div className="sticky top-[64px] lg:top-0 z-50 bg-white border-b border-indigo-100 flex justify-between items-center gap-4 p-4 -mx-4 lg:-mx-8 mb-4 shadow-md">
+                <div className="flex-1 flex flex-col overflow-hidden px-4 lg:px-8 pb-4">
+                  {/* Action Bar - Fixed at top of scoring area */}
+                  <div className="flex-none bg-white border border-indigo-100 flex justify-between items-center gap-4 p-4 rounded-t-2xl shadow-sm z-50">
                     <div className="flex items-center gap-2">
                       {isDirty ? (
                         <span className="flex items-center gap-2 text-amber-600 font-bold text-sm animate-pulse">
                           <AlertCircle size={18} />
-                          Có thay đổi chưa lưu!
+                          <span className="hidden sm:inline">Có thay đổi chưa lưu!</span>
+                          <span className="sm:hidden">Chưa lưu!</span>
                         </span>
                       ) : (
                         <span className="flex items-center gap-2 text-emerald-600 font-bold text-sm">
                           <CheckCircle2 size={18} />
-                          Đã lưu tất cả
+                          <span className="hidden sm:inline">Đã lưu tất cả</span>
+                          <span className="sm:hidden">Đã lưu</span>
                         </span>
                       )}
                     </div>
                     <Button 
                       onClick={handleBulkSaveScore} 
                       disabled={isSaving || !isDirty || (selectedEventId !== 'bonus_penalty' && data.events.find(e => e.id === selectedEventId)?.is_locked)}
-                      className="min-w-[180px] py-2.5 font-bold rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-200"
+                      className="min-w-[140px] sm:min-w-[180px] py-2.5 font-bold rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-200"
                     >
-                      {isSaving ? 'Đang lưu...' : 'Xác nhận chấm điểm'}
+                      {isSaving ? '...' : 'Xác nhận chấm điểm'}
                     </Button>
                   </div>
 
-                  <Card className="overflow-visible">
-                    <div className="overflow-x-auto -mx-4 lg:-mx-0">
-                      <table className="w-full text-left border-collapse min-w-max">
-                        <thead className="sticky top-[136px] lg:top-[72px] z-40 bg-slate-50 shadow-sm">
-                          <tr className="bg-black/5">
-                            <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider sticky left-0 bg-slate-50 z-50 border-r border-black/5">Lớp</th>
-                          {selectedEventId === 'bonus_penalty' ? (
+                  <div className="flex-1 overflow-auto border-x border-b border-indigo-100 rounded-b-2xl bg-white relative shadow-sm">
+                    <table className="w-full text-left border-collapse min-w-max">
+                      <thead className="sticky top-0 z-40 bg-slate-50 shadow-sm">
+                        <tr className="bg-black/5">
+                          <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider sticky left-0 bg-slate-50 z-50 border-r border-black/5">Lớp</th>
+                        {selectedEventId === 'bonus_penalty' ? (
                           <>
                             <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider text-center text-emerald-600">Điểm Thưởng</th>
                             <th className="px-6 py-4 font-bold text-sm uppercase tracking-wider text-center text-rose-600">Điểm Trừ</th>
@@ -2479,15 +2514,15 @@ export default function App() {
                         )}
                       </tr>
                     </thead>
-                      <tbody>
-                        {(Object.entries(classesByGrade) as [string, Class[]][]).map(([grade, classes]) => (
-                          <React.Fragment key={grade}>
-                            <tr className={cn("bg-black/[0.02] sticky top-[188px] lg:top-[124px] z-30", getGradeColor(grade).split(' ')[0])}>
-                              <td colSpan={10} className="px-6 py-2 border-r border-black/5 sticky left-0 z-30 bg-inherit">
-                                <span className={cn("text-[10px] font-bold uppercase tracking-widest", getGradeColor(grade).split(' ')[2])}>Khối {grade}</span>
-                              </td>
-                            </tr>
-                            {classes.map(cls => {
+                    <tbody>
+                      {(Object.entries(classesByGrade) as [string, Class[]][]).map(([grade, classes]) => (
+                        <React.Fragment key={grade}>
+                          <tr className={cn("bg-black/[0.02] sticky top-[52px] z-30", getGradeColor(grade).split(' ')[0])}>
+                            <td colSpan={10} className="px-6 py-2 border-r border-black/5 sticky left-0 z-30 bg-inherit">
+                              <span className={cn("text-[10px] font-bold uppercase tracking-widest", getGradeColor(grade).split(' ')[2])}>Khối {grade}</span>
+                            </td>
+                          </tr>
+                          {classes.map(cls => {
                             const event = data.events.find(e => e.id === selectedEventId);
                             const judgeId = userRole === 'judge' ? loggedInJudge?.id : selectedJudgeId;
  
@@ -2536,14 +2571,13 @@ export default function App() {
                     </tbody>
                   </table>
                 </div>
-              </Card>
-              </>
+              </div>
             )}
           </motion.div>
         )}
 
           {activeTab === 'settings' && data && (
-            <motion.div key="settings" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8">
+            <motion.div key="settings" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="flex-1 overflow-auto p-4 lg:p-8 space-y-8">
               <div>
                 <h1 className="text-3xl font-bold">Cấu hình</h1>
                 <p className="text-black/40">Thiết lập điểm quy đổi và hệ thống</p>
@@ -2597,7 +2631,7 @@ export default function App() {
           )}
 
           {activeTab === 'summary' && data && (
-            <motion.div key="summary" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8">
+            <motion.div key="summary" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="flex-1 overflow-auto p-4 lg:p-8 space-y-8">
               <div className="flex justify-between items-end">
                 <div>
                   <h1 className="text-3xl font-bold">Bảng tổng hợp</h1>
@@ -2675,7 +2709,7 @@ export default function App() {
           )}
 
           {activeTab === 'rankings' && data && (
-            <motion.div key="rankings" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8">
+            <motion.div key="rankings" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="flex-1 overflow-auto p-4 lg:p-8 space-y-8">
               <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
                 <div>
                   <h1 className="text-3xl font-bold">Bảng xếp hạng</h1>
