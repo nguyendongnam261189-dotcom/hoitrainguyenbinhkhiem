@@ -2,6 +2,7 @@ export interface Competition {
   id: string;
   name: string;
   date: string;
+  is_locked?: boolean;
 }
 
 export interface Class {
@@ -9,6 +10,8 @@ export interface Class {
   name: string;
   grade: string;
   competition_id: string;
+  bonus_points?: number;
+  penalty_points?: number;
 }
 
 export interface Event {
@@ -20,6 +23,7 @@ export interface Event {
   round_names?: string[];
   weight: number;
   is_locked: boolean;
+  ranking_scope?: 'grade' | 'school';
 }
 
 export interface Judge {
