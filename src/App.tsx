@@ -241,6 +241,7 @@ export default function App() {
   const [conversions, setConversions] = useState<PointConversion[]>([]);
   const [pendingScores, setPendingScores] = useState<Record<string, number>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -267,9 +268,21 @@ export default function App() {
           }
         });
         setPendingScores(initialScores);
+        setIsDirty(false);
       }
     }
   }, [selectedEventId, selectedJudgeId, userRole, loggedInJudge?.id, data]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isDirty]);
 
   const fetchCompetitions = async () => {
     const res = await fetch('/api/competitions');
@@ -860,6 +873,7 @@ export default function App() {
   const handleSaveScore = async (classId: string, eventId: string, judgeId: string, round: number, score: number, category?: string) => {
     const key = `${classId}-${round}-${category || 'none'}`;
     setPendingScores(prev => ({ ...prev, [key]: score }));
+    setIsDirty(true);
   };
 
   const handleBulkSaveScore = async () => {
@@ -887,6 +901,7 @@ export default function App() {
       });
       if (res.ok) {
         alert("Đã lưu điểm thành công!");
+        setIsDirty(false);
         fetchFullData(selectedCompId!);
       } else {
         const err = await res.json();
@@ -1687,6 +1702,19 @@ export default function App() {
     );
   }
 
+  const handleTabChange = (tab: typeof activeTab) => {
+    if (isDirty) {
+      if (confirm("Bạn có thay đổi chưa lưu. Bạn có chắc chắn muốn rời đi không?")) {
+        setIsDirty(false);
+        setActiveTab(tab);
+        setIsMobileMenuOpen(false);
+      }
+    } else {
+      setActiveTab(tab);
+      setIsMobileMenuOpen(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-indigo-50/20 flex flex-col lg:flex-row font-sans text-indigo-950">
       {/* Mobile Header */}
@@ -1726,20 +1754,20 @@ export default function App() {
           </div>
 
           <nav className="space-y-1.5">
-            <NavItem active={activeTab === 'dashboard'} onClick={() => { setActiveTab('dashboard'); setIsMobileMenuOpen(false); }} icon={<LayoutDashboard size={20} />} label="Tổng quan" />
+            <NavItem active={activeTab === 'dashboard'} onClick={() => handleTabChange('dashboard')} icon={<LayoutDashboard size={20} />} label="Tổng quan" />
             {userRole === 'admin' && (
               <>
-                <NavItem active={activeTab === 'events'} onClick={() => { setActiveTab('events'); setIsMobileMenuOpen(false); }} icon={<Trophy size={20} />} label="Nội dung thi" />
-                <NavItem active={activeTab === 'classes'} onClick={() => { setActiveTab('classes'); setIsMobileMenuOpen(false); }} icon={<Users size={20} />} label="Danh sách lớp" />
-                <NavItem active={activeTab === 'judges'} onClick={() => { setActiveTab('judges'); setIsMobileMenuOpen(false); }} icon={<UserCircle2 size={20} />} label="Giám khảo" />
-                <NavItem active={activeTab === 'settings'} onClick={() => { setActiveTab('settings'); setIsMobileMenuOpen(false); }} icon={<Settings size={20} />} label="Cấu hình" />
+                <NavItem active={activeTab === 'events'} onClick={() => handleTabChange('events')} icon={<Trophy size={20} />} label="Nội dung thi" />
+                <NavItem active={activeTab === 'classes'} onClick={() => handleTabChange('classes')} icon={<Users size={20} />} label="Danh sách lớp" />
+                <NavItem active={activeTab === 'judges'} onClick={() => handleTabChange('judges')} icon={<UserCircle2 size={20} />} label="Giám khảo" />
+                <NavItem active={activeTab === 'settings'} onClick={() => handleTabChange('settings')} icon={<Settings size={20} />} label="Cấu hình" />
               </>
             )}
             {(userRole === 'admin' || userRole === 'judge') && (
-              <NavItem active={activeTab === 'scoring'} onClick={() => { setActiveTab('scoring'); setIsMobileMenuOpen(false); }} icon={<CheckCircle2 size={20} />} label="Chấm điểm" />
+              <NavItem active={activeTab === 'scoring'} onClick={() => handleTabChange('scoring')} icon={<CheckCircle2 size={20} />} label="Chấm điểm" />
             )}
-            <NavItem active={activeTab === 'summary'} onClick={() => { setActiveTab('summary'); setIsMobileMenuOpen(false); }} icon={<BarChart3 size={20} />} label="Bảng tổng hợp" />
-            <NavItem active={activeTab === 'rankings'} onClick={() => { setActiveTab('rankings'); setIsMobileMenuOpen(false); }} icon={<Trophy size={20} />} label="Bảng xếp hạng" />
+            <NavItem active={activeTab === 'summary'} onClick={() => handleTabChange('summary')} icon={<BarChart3 size={20} />} label="Bảng tổng hợp" />
+            <NavItem active={activeTab === 'rankings'} onClick={() => handleTabChange('rankings')} icon={<Trophy size={20} />} label="Bảng xếp hạng" />
           </nav>
         </div>
 
@@ -2343,7 +2371,16 @@ export default function App() {
                   <label className="text-xs font-bold uppercase text-black/40 ml-1">Chọn nội dung thi</label>
                   <select 
                     value={selectedEventId || ''} 
-                    onChange={(e) => setSelectedEventId(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (isDirty) {
+                        if (confirm("Bạn có thay đổi chưa lưu. Bạn có chắc chắn muốn chuyển nội dung không?")) {
+                          setSelectedEventId(val);
+                        }
+                      } else {
+                        setSelectedEventId(val);
+                      }
+                    }}
                     className="w-full px-4 py-3 bg-white border border-black/5 rounded-2xl focus:ring-2 focus:ring-black/10 outline-none font-medium"
                   >
                     <option value="">-- Chọn nội dung --</option>
@@ -2366,7 +2403,16 @@ export default function App() {
                     <label className="text-xs font-bold uppercase text-black/40 ml-1">Chấm với tư cách GK</label>
                     <select 
                       value={selectedJudgeId || ''} 
-                      onChange={(e) => setSelectedJudgeId(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (isDirty) {
+                          if (confirm("Bạn có thay đổi chưa lưu. Bạn có chắc chắn muốn chuyển giám khảo không?")) {
+                            setSelectedJudgeId(val);
+                          }
+                        } else {
+                          setSelectedJudgeId(val);
+                        }
+                      }}
                       className="w-full px-4 py-3 bg-white border border-black/5 rounded-2xl focus:ring-2 focus:ring-black/10 outline-none font-medium"
                     >
                       <option value="">-- Chọn giám khảo --</option>
@@ -2458,11 +2504,24 @@ export default function App() {
                       ))}
                     </tbody>
                   </table>
-                  <div className="p-6 bg-black/[0.02] border-t border-black/5 flex justify-end">
+                  <div className="sticky bottom-0 p-4 md:p-6 bg-white/90 backdrop-blur-md border-t border-black/10 flex flex-col md:flex-row justify-between items-center gap-4 z-30 shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.1)] rounded-b-2xl">
+                    <div className="flex items-center gap-2">
+                      {isDirty ? (
+                        <span className="flex items-center gap-2 text-amber-600 font-bold text-sm animate-pulse">
+                          <AlertCircle size={18} />
+                          Có thay đổi chưa lưu!
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-2 text-emerald-600 font-bold text-sm">
+                          <CheckCircle2 size={18} />
+                          Đã lưu tất cả thay đổi
+                        </span>
+                      )}
+                    </div>
                     <Button 
                       onClick={handleBulkSaveScore} 
                       disabled={isSaving || (selectedEventId !== 'bonus_penalty' && data.events.find(e => e.id === selectedEventId)?.is_locked)}
-                      className="min-w-[200px]"
+                      className="w-full md:w-auto min-w-[200px] py-4 text-lg"
                     >
                       {isSaving ? 'Đang lưu...' : 'Xác nhận chấm điểm'}
                     </Button>
