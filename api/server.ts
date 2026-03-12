@@ -1,7 +1,7 @@
 import express from "express";
 import admin from "firebase-admin";
 
-// 1. Khởi tạo Firebase Admin (Tối ưu cho Vercel Serverless)
+// 1. Khởi tạo Firebase Admin (Tối ưu cho Serverless)
 const projectId = process.env.FIREBASE_PROJECT_ID;
 const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
 const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
@@ -21,13 +21,11 @@ if (projectId && clientEmail && privateKey) {
       console.error("Firebase initialization error:", error);
     }
   }
-} else {
-  console.warn("Firebase credentials missing in Environment Variables.");
 }
 
 const db = admin.firestore();
 
-// Helper lấy dữ liệu với ID
+// Helper lấy dữ liệu Firestore
 const getDocs = async (collection: string, queryFn?: (ref: admin.firestore.CollectionReference) => admin.firestore.Query) => {
   let ref: admin.firestore.Query = db.collection(collection);
   if (queryFn) ref = queryFn(db.collection(collection));
@@ -64,11 +62,11 @@ app.get("/api/competitions", async (req, res) => {
 app.post("/api/competitions", async (req, res) => {
   try {
     const { name, date } = req.body;
-    if (!name || !date) return res.status(400).json({ error: "Thiếu tên hoặc ngày tổ chức" });
+    if (!name || !date) return res.status(400).json({ error: "Thiếu thông tin" });
     const docRef = await db.collection("competitions").add({ name, date, is_locked: false });
     res.json({ id: docRef.id });
   } catch (error) {
-    res.status(500).json({ error: "Lỗi khi tạo hội thi" });
+    res.status(500).json({ error: "Error creating competition" });
   }
 });
 
@@ -81,9 +79,7 @@ app.put("/api/competitions/:id", async (req, res) => {
     if (is_locked !== undefined) updateData.is_locked = is_locked;
     await db.collection("competitions").doc(req.params.id).update(updateData);
     res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: "Error updating competition" });
-  }
+  } catch (error) { res.status(500).json({ error: "Error updating competition" }); }
 });
 
 app.delete("/api/competitions/:id", async (req, res) => {
@@ -98,9 +94,7 @@ app.delete("/api/competitions/:id", async (req, res) => {
       await batch.commit();
     }
     res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: "Error deleting competition" });
-  }
+  } catch (error) { res.status(500).json({ error: "Error deleting competition" }); }
 });
 
 app.get("/api/competitions/:id/full", async (req, res) => {
@@ -116,39 +110,22 @@ app.get("/api/competitions/:id/full", async (req, res) => {
       getDocs("conversions", ref => ref.orderBy("rank"))
     ]);
 
-    const sortItems = (items: any[]) => items.sort((a, b) => {
-      if (a.order !== undefined && b.order !== undefined) return a.order - b.order;
-      if (a.name && b.name) return a.name.localeCompare(b.name, undefined, { numeric: true });
-      return 0;
-    });
+    const sortItems = (items: any[]) => items.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
     const eventIds = events.map(e => e.id);
     let scores: any[] = [];
     if (eventIds.length > 0) {
       const chunks = [];
-      for (let i = 0; i < eventIds.length; i += 10) {
-        chunks.push(eventIds.slice(i, i + 10));
-      }
-      const scoreSnaps = await Promise.all(chunks.map(chunk => 
-        db.collection("scores").where("event_id", "in", chunk).get()
-      ));
-      scores = scoreSnaps.flatMap(snap => snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      for (let i = 0; i < eventIds.length; i += 10) chunks.push(eventIds.slice(i, i + 10));
+      const snaps = await Promise.all(chunks.map(c => db.collection("scores").where("event_id", "in", c).get()));
+      scores = snaps.flatMap(s => s.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }
 
-    res.json({
-      competition: { id: compDoc.id, ...compDoc.data() },
-      classes: sortItems(classes),
-      events: sortItems(events),
-      judges: sortItems(judges),
-      scores,
-      conversions
-    });
-  } catch (error) {
-    res.status(500).json({ error: "Error fetching full data" });
-  }
+    res.json({ competition: { id: compDoc.id, ...compDoc.data() }, classes: sortItems(classes), events: sortItems(events), judges: sortItems(judges), scores, conversions });
+  } catch (error) { res.status(500).json({ error: "Error fetching data" }); }
 });
 
-// Reorder & Classes (Cập nhật Bonus/Penalty)
+// Reorder & Classes
 app.post("/api/reorder", async (req, res) => {
   try {
     const { collection, items } = req.body;
@@ -162,74 +139,79 @@ app.post("/api/reorder", async (req, res) => {
 app.post("/api/classes", async (req, res) => {
   try {
     const { name, grade, competition_id, order } = req.body;
-    const docRef = await db.collection("classes").add({ 
-      name, grade, competition_id, order: order || 0, bonus_points: 0, penalty_points: 0 
-    });
+    const docRef = await db.collection("classes").add({ name, grade, competition_id, order: order || 0, bonus_points: 0, penalty_points: 0 });
     res.json({ id: docRef.id });
-  } catch (error) { res.status(500).json({ error: "Error creating class" }); }
+  } catch (error) { res.status(500).json({ error: "Error" }); }
 });
 
 app.put("/api/classes/:id", async (req, res) => {
   try {
     const { name, grade, bonus_points, penalty_points } = req.body;
-    const updateData: any = {};
-    if (name !== undefined) updateData.name = name;
-    if (grade !== undefined) updateData.grade = grade;
-    if (bonus_points !== undefined) updateData.bonus_points = bonus_points;
-    if (penalty_points !== undefined) updateData.penalty_points = penalty_points;
-    await db.collection("classes").doc(req.params.id).update(updateData);
+    const update: any = {};
+    if (name !== undefined) update.name = name;
+    if (grade !== undefined) update.grade = grade;
+    if (bonus_points !== undefined) update.bonus_points = bonus_points;
+    if (penalty_points !== undefined) update.penalty_points = penalty_points;
+    await db.collection("classes").doc(req.params.id).update(update);
     res.json({ success: true });
-  } catch (error) { res.status(500).json({ error: "Error updating class" }); }
+  } catch (error) { res.status(500).json({ error: "Error" }); }
 });
 
-app.delete("/api/classes/:id", async (req, res) => {
-  try {
-    await db.collection("classes").doc(req.params.id).delete();
-    const scoresSnap = await db.collection("scores").where("class_id", "==", req.params.id).get();
-    const batch = db.batch();
-    scoresSnap.docs.forEach(doc => batch.delete(doc.ref));
-    await batch.commit();
-    res.json({ success: true });
-  } catch (error) { res.status(500).json({ error: "Error deleting class" }); }
-});
-
-// Events (Cập nhật Ranking Scope)
+// Events
 app.post("/api/events", async (req, res) => {
   try {
     const { name, competition_id, type, round_count, weight, order, round_names, ranking_scope } = req.body;
-    const docRef = await db.collection("events").add({ 
-      name, competition_id, type, round_count, weight, is_locked: false, 
-      order: order || 0, round_names: round_names || [], ranking_scope: ranking_scope || 'grade' 
-    });
+    const docRef = await db.collection("events").add({ name, competition_id, type, round_count, weight, is_locked: false, order: order || 0, round_names: round_names || [], ranking_scope: ranking_scope || 'grade' });
     res.json({ id: docRef.id });
-  } catch (error) { res.status(500).json({ error: "Error creating event" }); }
+  } catch (error) { res.status(500).json({ error: "Error" }); }
 });
 
 app.put("/api/events/:id", async (req, res) => {
   try {
     const { name, type, round_count, weight, round_names, ranking_scope } = req.body;
-    const updateData: any = { name, type, round_count, weight, round_names: round_names || [] };
-    if (ranking_scope !== undefined) updateData.ranking_scope = ranking_scope;
-    await db.collection("events").doc(req.params.id).update(updateData);
+    const update: any = { name, type, round_count, weight, round_names: round_names || [] };
+    if (ranking_scope !== undefined) update.ranking_scope = ranking_scope;
+    await db.collection("events").doc(req.params.id).update(update);
     res.json({ success: true });
-  } catch (error) { res.status(500).json({ error: "Error updating event" }); }
+  } catch (error) { res.status(500).json({ error: "Error" }); }
 });
 
-// Judges & Login
+// Judges (Cập nhật logic Phân quyền & Thưởng Phạt)
+app.post("/api/judges", async (req, res) => {
+  try {
+    const { name, code, competition_id, order, assigned_event_ids, is_bonus_penalty_judge } = req.body;
+    const docRef = await db.collection("judges").add({ 
+      name, code, competition_id, order: order || 0, 
+      assigned_event_ids: assigned_event_ids || [], 
+      is_bonus_penalty_judge: !!is_bonus_penalty_judge 
+    });
+    res.json({ id: docRef.id });
+  } catch (error) { res.status(500).json({ error: "Error" }); }
+});
+
+app.put("/api/judges/:id", async (req, res) => {
+  try {
+    const { name, code, assigned_event_ids, is_bonus_penalty_judge } = req.body;
+    const update: any = { name, code };
+    if (assigned_event_ids !== undefined) update.assigned_event_ids = assigned_event_ids;
+    if (is_bonus_penalty_judge !== undefined) update.is_bonus_penalty_judge = !!is_bonus_penalty_judge;
+    await db.collection("judges").doc(req.params.id).update(update);
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ error: "Error" }); }
+});
+
+// Judge Login
 app.post("/api/judges/login", async (req, res) => {
   try {
     const { code, competition_id } = req.body;
     if (!code || !competition_id) return res.status(400).json({ error: "Thiếu thông tin" });
-    const snap = await db.collection("judges")
-      .where("code", "==", code.trim())
-      .where("competition_id", "==", competition_id)
-      .limit(1).get();
+    const snap = await db.collection("judges").where("code", "==", code.trim()).where("competition_id", "==", competition_id).limit(1).get();
     if (!snap.empty) res.json({ id: snap.docs[0].id, ...snap.docs[0].data() });
     else res.status(401).json({ error: "Mã giám khảo không đúng" });
   } catch (error) { res.status(500).json({ error: "Login failed" }); }
 });
 
-// Scores (Cập nhật logic kiểm tra khóa kép: nội dung & hội thi)
+// Scores (Cập nhật kiểm tra khóa hội thi & nội dung)
 app.post("/api/scores/bulk", async (req, res) => {
   try {
     const { scores } = req.body;
@@ -241,18 +223,14 @@ app.post("/api/scores/bulk", async (req, res) => {
       for (const s of chunk) {
         const eventDoc = await db.collection("events").doc(s.event_id).get();
         if (!eventDoc.exists || eventDoc.data()?.is_locked) continue;
-        
         const compId = eventDoc.data()?.competition_id;
         if (compId) {
-          const compDoc = await db.collection("competitions").doc(compId).get();
-          if (compDoc.exists && compDoc.data()?.is_locked) continue;
+          const cDoc = await db.collection("competitions").doc(compId).get();
+          if (cDoc.exists && cDoc.data()?.is_locked) continue;
         }
 
-        const query = db.collection("scores")
-          .where("class_id", "==", s.class_id).where("event_id", "==", s.event_id)
-          .where("judge_id", "==", s.judge_id).where("round", "==", s.round);
+        const query = db.collection("scores").where("class_id", "==", s.class_id).where("event_id", "==", s.event_id).where("judge_id", "==", s.judge_id).where("round", "==", s.round);
         const existing = await query.get();
-        
         const targetDoc = existing.docs.find(d => d.data().category === s.category || (!d.data().category && !s.category));
         if (targetDoc) batch.update(targetDoc.ref, { score: s.score });
         else batch.set(db.collection("scores").doc(), { ...s, category: s.category || null });
@@ -260,33 +238,31 @@ app.post("/api/scores/bulk", async (req, res) => {
       await batch.commit();
     }
     res.json({ success: true });
-  } catch (error) { res.status(500).json({ error: "Error bulk saving scores" }); }
+  } catch (error) { res.status(500).json({ error: "Bulk save failed" }); }
 });
 
 app.post("/api/scores", async (req, res) => {
   try {
     const { class_id, event_id, judge_id, round, score, category } = req.body;
     const eventDoc = await db.collection("events").doc(event_id).get();
-    if (!eventDoc.exists || eventDoc.data()?.is_locked) return res.status(403).json({ error: "Nội dung đã bị khóa" });
-    
+    if (!eventDoc.exists || eventDoc.data()?.is_locked) return res.status(403).json({ error: "Bị khóa" });
     const compDoc = await db.collection("competitions").doc(eventDoc.data()?.competition_id).get();
-    if (compDoc.exists && compDoc.data()?.is_locked) return res.status(403).json({ error: "Hội thi đã bị khóa" });
+    if (compDoc.exists && compDoc.data()?.is_locked) return res.status(403).json({ error: "Bị khóa" });
 
     const existing = await db.collection("scores").where("class_id", "==", class_id).where("event_id", "==", event_id).where("judge_id", "==", judge_id).where("round", "==", round).get();
     const targetDoc = existing.docs.find(d => d.data().category === category || (!d.data().category && !category));
-    
     if (targetDoc) await targetDoc.ref.update({ score });
     else await db.collection("scores").add({ class_id, event_id, judge_id, round, score, category: category || null });
     res.json({ success: true });
-  } catch (error) { res.status(500).json({ error: "Error saving score" }); }
+  } catch (error) { res.status(500).json({ error: "Save score failed" }); }
 });
 
-// Lockings & Conversions (Giữ nguyên)
+// Locking & Conversions
 app.post("/api/events/:id/lock", async (req, res) => {
   try {
     await db.collection("events").doc(req.params.id).update({ is_locked: !!req.body.is_locked });
     res.json({ success: true });
-  } catch (error) { res.status(500).json({ error: "Error locking event" }); }
+  } catch (error) { res.status(500).json({ error: "Locking failed" }); }
 });
 
 app.post("/api/conversions", async (req, res) => {
@@ -300,5 +276,5 @@ app.post("/api/conversions", async (req, res) => {
   } catch (error) { res.status(500).json({ error: "Error saving conversions" }); }
 });
 
-// --- VERCEL EXPORT ---
+// VERCEL EXPORT
 export default app;
