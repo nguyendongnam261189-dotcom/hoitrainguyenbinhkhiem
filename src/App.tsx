@@ -985,10 +985,23 @@ export default function App() {
       const classResults = data.classes.map(cls => {
         const clsScores = eventScores.filter(s => s.class_id === cls.id);
         
-        // Calculate total score: sum(regular)
-        const regularScore = clsScores.filter(s => !s.category || s.category === 'none').reduce((sum, s) => sum + s.score, 0);
+        // Calculate total score
+        const isNegativeScoring = event.type === 'discipline' || event.type === 'hygiene';
+        const baseScore = isNegativeScoring ? 300 : 0;
         
-        const totalScore = regularScore;
+        // For negative scoring, each score entry is (300 - penalty)
+        // We sum up entries that exist.
+        const totalScore = clsScores.reduce((sum, s) => {
+          if (isNegativeScoring) {
+            return sum + (baseScore - s.score);
+          }
+          // For normal events, only sum regular scores (no category)
+          if (!s.category || s.category === 'none') {
+            return sum + s.score;
+          }
+          return sum;
+        }, 0);
+        
         const hasScores = clsScores.length > 0;
         
         // Group scores by judge for display
@@ -1987,6 +2000,18 @@ export default function App() {
                         <option value="school">Toàn trường</option>
                       </select>
                     </div>
+                    <div className="flex flex-col gap-1.5 flex-1">
+                      <label className="text-xs font-semibold uppercase tracking-wider text-black/50 ml-1">Loại nội dung</label>
+                      <select 
+                        value={newEventType} 
+                        onChange={(e) => setNewEventType(e.target.value as 'normal' | 'discipline' | 'hygiene')}
+                        className="px-4 py-2.5 bg-black/5 border-none rounded-xl focus:ring-2 focus:ring-black/10 outline-none transition-all text-sm font-medium"
+                      >
+                        <option value="normal">Chấm điểm dương (0 - Max)</option>
+                        <option value="discipline">Kỷ luật (300 - Điểm trừ)</option>
+                        <option value="hygiene">Vệ sinh (300 - Điểm trừ)</option>
+                      </select>
+                    </div>
                   </div>
                   
                   {newEventRounds > 1 && (
@@ -2066,14 +2091,15 @@ export default function App() {
                                 <div className="flex items-center gap-2">
                                   <button 
                                     onClick={() => {
-                                      setEditingEvent(event);
-                                      setNewEventName(event.name);
-                                      setNewEventWeight(event.weight);
-                                      setNewEventRounds(event.round_count);
-                                      setNewEventJudgeCount(event.judge_count || 1);
-                                      setNewEventRoundNames(event.round_names || []);
-                                      setNewEventRankingScope(event.ranking_scope || 'grade');
-                                      setShowAddEvent(true);
+                                    setEditingEvent(event);
+                                    setNewEventName(event.name);
+                                    setNewEventWeight(event.weight);
+                                    setNewEventRounds(event.round_count);
+                                    setNewEventJudgeCount(event.judge_count || 1);
+                                    setNewEventRoundNames(event.round_names || []);
+                                    setNewEventRankingScope(event.ranking_scope || 'grade');
+                                    setNewEventType(event.type || 'normal');
+                                    setShowAddEvent(true);
                                       window.scrollTo({ top: 0, behavior: 'smooth' });
                                     }}
                                     className="p-2 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors"
@@ -2534,9 +2560,10 @@ export default function App() {
                             {Array.from({ length: data.events.find(e => e.id === selectedEventId)?.round_count || 1 }).map((_, i) => {
                               const event = data.events.find(e => e.id === selectedEventId);
                               const customName = event?.round_names?.[i];
+                              const isNegative = event?.type === 'discipline' || event?.type === 'hygiene';
                               return (
                                 <th key={i} className="px-6 py-4 font-bold text-sm uppercase tracking-wider text-center">
-                                  {customName || ((event?.round_count || 1) > 1 ? `Lần ${i + 1}` : 'Điểm số')}
+                                  {customName || ((event?.round_count || 1) > 1 ? `Lần ${i + 1}` : (isNegative ? 'Điểm trừ' : 'Điểm số'))}
                                 </th>
                               );
                             })}
@@ -2580,19 +2607,33 @@ export default function App() {
                                       />
                                     </td>
                                   </>
-                                ) : (
-                                  <>
-                                    {Array.from({ length: event?.round_count || 1 }).map((_, i) => (
-                                      <td key={i} className="px-6 py-4 text-center">
-                                        <ScoreInput 
-                                          value={pendingScores[`${cls.id}-${i + 1}-none`] || 0}
-                                          onChange={(val) => handleSaveScore(cls.id, selectedEventId, judgeId, i + 1, val)}
-                                          disabled={event?.is_locked}
-                                        />
-                                      </td>
-                                    ))}
-                                  </>
-                                )}
+                                  ) : (
+                                    <>
+                                      {Array.from({ length: event?.round_count || 1 }).map((_, i) => {
+                                        const isNegative = event?.type === 'discipline' || event?.type === 'hygiene';
+                                        const penalty = pendingScores[`${cls.id}-${i + 1}-none`] || 0;
+                                        const remaining = isNegative ? 300 - penalty : penalty;
+                                        
+                                        return (
+                                          <td key={i} className="px-6 py-4 text-center">
+                                            <div className="flex flex-col items-center gap-1">
+                                              <ScoreInput 
+                                                value={penalty}
+                                                onChange={(val) => handleSaveScore(cls.id, selectedEventId, judgeId, i + 1, val)}
+                                                disabled={event?.is_locked}
+                                                className={isNegative ? "text-rose-600" : ""}
+                                              />
+                                              {isNegative && (
+                                                <span className="text-[10px] font-bold text-emerald-600">
+                                                  Còn: {remaining}
+                                                </span>
+                                              )}
+                                            </div>
+                                          </td>
+                                        );
+                                      })}
+                                    </>
+                                  )}
                               </tr>
                             );
                           })}
